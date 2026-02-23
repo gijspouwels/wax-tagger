@@ -1,0 +1,24 @@
+# OAuth access token (aangemaakt na eerste login)
+.oauth_tokens
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# Sessielog bestanden
+*.log.json
+
+# macOS
+.DS_Store
+
+# IDE
+.idea/
+.vscode/
+
+# Claude Code context
+.claude/
+
+# Ongebruikte stub
+ui/
