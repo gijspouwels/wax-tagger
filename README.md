@@ -12,8 +12,8 @@ Verrijkt tracks in je Apple Music/iTunes library met metadata van [Discogs](http
 ## Installatie
 
 ```bash
-git clone https://github.com/jouw-gebruikersnaam/WaxTagger.git
-cd WaxTagger
+git clone https://github.com/jouw-gebruikersnaam/wax-tagger.git
+cd wax-tagger
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
