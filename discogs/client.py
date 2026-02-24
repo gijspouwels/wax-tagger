@@ -295,6 +295,38 @@ class DiscogsClient:
 
     # ─── Release-details ───────────────────────────────────────────────────────
 
+    def get_earliest_release_id(self, master_id: int, fallback_id: int, current_year: Optional[int]) -> int:
+        """
+        Geeft het release-ID van de vroegste bekende persing via de master.
+        Geeft fallback_id terug als er geen eerdere persing gevonden wordt.
+        Scant maximaal één pagina (50 versies) om extra API-calls te beperken.
+        """
+        try:
+            self._rate_limit()
+            master = self._client.master(master_id)
+            original_year = master.year
+
+            # Huidige release is al vroeg genoeg
+            if not original_year or (current_year and original_year >= current_year):
+                return fallback_id
+
+            best_id = fallback_id
+            best_year = current_year or 9999
+
+            for i, version in enumerate(master.versions):
+                if i >= 50:
+                    break
+                v_year = getattr(version, 'year', None)
+                if v_year and v_year < best_year:
+                    best_year = v_year
+                    best_id = version.id
+                if best_year == original_year:
+                    break  # vroegst mogelijke jaar gevonden
+
+            return best_id
+        except Exception:
+            return fallback_id
+
     def resolve_master(self, master_id: int) -> Optional[int]:
         """Zet een master-ID om naar het hoofd-release-ID."""
         try:

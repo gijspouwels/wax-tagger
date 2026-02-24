@@ -352,7 +352,14 @@ def enrich_track(
         else:
             chosen = results[0]
 
-        details = discogs.get_release_details(chosen.release_id) or chosen
+        # Controleer via de master of er een vroegere persing bestaat
+        release_id = chosen.release_id
+        if chosen.master_id:
+            release_id = discogs.get_earliest_release_id(chosen.master_id, chosen.release_id, chosen.year)
+            if release_id != chosen.release_id:
+                console.print(f"  [dim]Eerdere persing gevonden via master — release #{release_id} gebruikt.[/dim]")
+
+        details = discogs.get_release_details(release_id) or chosen
 
     # Bepaal wat we gaan schrijven
     new_album = None
