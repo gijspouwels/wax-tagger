@@ -1,5 +1,15 @@
 import os
 
+# ── .env laden (optioneel, zonder extra dependencies) ─────────────────────────
+_ENV_FILE = os.path.join(os.path.dirname(__file__), ".env")
+if os.path.exists(_ENV_FILE):
+    with open(_ENV_FILE) as _f:
+        for _line in _f:
+            _line = _line.strip()
+            if _line and not _line.startswith("#") and "=" in _line:
+                _k, _, _v = _line.partition("=")
+                os.environ.setdefault(_k.strip(), _v.strip())
+
 # ── Discogs OAuth credentials ──────────────────────────────────────────────────
 # Aangemaakt op: https://www.discogs.com/settings/developers
 DISCOGS_CONSUMER_KEY    = os.environ.get("DISCOGS_CONSUMER_KEY",    "")
@@ -12,4 +22,4 @@ OAUTH_TOKEN_FILE = os.path.join(os.path.dirname(__file__), ".oauth_tokens")
 DISCOGS_USER_AGENT = "WaxTagger/1.0"
 
 # Tijdelijke map voor artwork downloads
-ARTWORK_TMP_DIR = "/tmp/music_discogs_artwork"
+ARTWORK_TMP_DIR = "/tmp/artwork"

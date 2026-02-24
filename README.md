@@ -12,7 +12,7 @@ Verrijkt tracks in je Apple Music/iTunes library met metadata van [Discogs](http
 ## Installatie
 
 ```bash
-git clone https://github.com/jouw-gebruikersnaam/wax-tagger.git
+git clone https://github.com/gijspouwels/wax-tagger.git
 cd wax-tagger
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
@@ -63,7 +63,7 @@ Zonder `-f` worden standaard **alle velden** verrijkt. Niet-opgegeven opties wor
 
 ```bash
 # Volledig automatisch, alle velden, geen overwrite
-.venv/bin/python3 main.py -p "Discogs Batch" -m auto -o n
+.venv/bin/python3 main.py -p "Playlist Name" -m auto -o n
 
 # Dry-run voor een specifieke playlist
 .venv/bin/python3 main.py -p House -m dry

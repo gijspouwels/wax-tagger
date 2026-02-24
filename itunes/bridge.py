@@ -26,6 +26,15 @@ def _run_applescript(script: str) -> str:
     return result.stdout.strip()
 
 
+def check_music_running() -> bool:
+    """Geeft True terug als Music.app actief is."""
+    script = 'tell application "System Events" to return (exists process "Music")'
+    try:
+        return _run_applescript(script).strip().lower() == "true"
+    except RuntimeError:
+        return False
+
+
 def get_playlists() -> list[dict]:
     """Haal alle gebruikersplaylists op uit Music.app (naam + aantal tracks)."""
     script = """

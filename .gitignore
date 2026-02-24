@@ -1,6 +1,9 @@
 # OAuth access token (aangemaakt na eerste login)
 .oauth_tokens
 
+# Lokale credentials (consumer key/secret)
+.env
+
 # Python
 .venv/
 __pycache__/

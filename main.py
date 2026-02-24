@@ -5,6 +5,7 @@ WaxTagger — verrijkt iTunes/Music.app tracks met Discogs-metadata.
 
 import sys
 import os
+import re
 import json
 import datetime
 import argparse
@@ -18,14 +19,14 @@ from rich.prompt import Prompt, Confirm
 from rich.text import Text
 
 import config
-from itunes.bridge import get_playlists, get_tracks_from_playlist, update_track_metadata
+from itunes.bridge import check_music_running, get_playlists, get_tracks_from_playlist, update_track_metadata
 from itunes.models import Track
 from discogs.client import DiscogsClient
 from discogs.models import DiscogsRelease
 
 console = Console()
 
-FIELDS = ["album", "jaar", "genre", "label", "artwork", "titel"]
+FIELDS = ["album", "jaar", "genre", "label", "artwork"]
 
 
 # ─── CLI-argumenten ────────────────────────────────────────────────────────────
@@ -253,17 +254,20 @@ def prompt_choice(results: list[DiscogsRelease]) -> Optional[DiscogsRelease]:
     return None
 
 
-def confirm_title_change(original: str, new_title: str) -> bool:
-    """Vraag of een afwijkende Discogs-albumtitel als tracktitel overgenomen moet worden."""
-    console.print(
-        f"\n  [yellow]⚠[/yellow]  Discogs-titel wijkt af:\n"
-        f"     iTunes:   [dim]{original}[/dim]\n"
-        f"     Discogs:  [dim]{new_title}[/dim]"
-    )
-    return Confirm.ask("  Titel aanpassen?", default=False)
-
 
 # ─── Kernenrichment ────────────────────────────────────────────────────────────
+
+_DISCOGS_URL_RE = re.compile(
+    r'https?://(?:www\.)?discogs\.com/(?:[a-z]{2}/)?(release|master)/(\d+)',
+    re.IGNORECASE,
+)
+
+def _release_id_from_comment(comment: Optional[str]) -> Optional[tuple[str, int]]:
+    """Geeft (type, id) terug als de opmerking een Discogs release- of master-URL bevat."""
+    if not comment:
+        return None
+    m = _DISCOGS_URL_RE.search(comment)
+    return (m.group(1).lower(), int(m.group(2))) if m else None
 
 def _clear_discogs_fields(track: Track, fields: set[str], mode: str, log: list[dict]) -> None:
     """Maak Discogs-velden leeg wanneer er geen match gevonden is en overwrite=True."""
@@ -307,32 +311,50 @@ def enrich_track(
     Zoek een track op Discogs en schrijf de gekozen metadata terug.
     Geeft True terug als er iets bijgewerkt is.
     """
-    results = discogs.search(track.artist, track.title)
-    if not results:
-        if overwrite:
-            _clear_discogs_fields(track, fields, mode, log)
-            return True
-        console.print("  [dim]Niets gevonden op Discogs — overgeslagen.[/dim]\n")
-        log.append({"track": str(track), "status": "not_found"})
-        return False
+    pinned = _release_id_from_comment(track.comment)
 
-    if mode == "interactive":
-        show_results(results)
-        try:
-            chosen = prompt_choice(results)
-        except SystemExit:
-            raise
-        if chosen is None:
-            log.append({"track": str(track), "status": "skipped"})
+    if pinned:
+        url_type, url_id = pinned
+        if url_type == "master":
+            console.print(f"  [dim]Discogs master-URL gevonden — hoofdrelease ophalen.[/dim]")
+            release_id = discogs.resolve_master(url_id)
+            if not release_id:
+                console.print("  [red]Master niet gevonden via URL — overgeslagen.[/red]\n")
+                log.append({"track": str(track), "status": "error", "message": "master niet gevonden via opmerking-URL"})
+                return False
+        else:
+            console.print(f"  [dim]Discogs-URL gevonden in opmerking — zoeken overgeslagen.[/dim]")
+            release_id = url_id
+        details = discogs.get_release_details(release_id)
+        if not details:
+            console.print("  [red]Release niet gevonden via URL — overgeslagen.[/red]\n")
+            log.append({"track": str(track), "status": "error", "message": "release niet gevonden via opmerking-URL"})
             return False
     else:
-        chosen = results[0]
+        results = discogs.search(track.artist, track.title)
+        if not results:
+            if overwrite:
+                _clear_discogs_fields(track, fields, mode, log)
+                return True
+            console.print("  [dim]Niets gevonden op Discogs — overgeslagen.[/dim]\n")
+            log.append({"track": str(track), "status": "not_found"})
+            return False
 
-    # Haal volledige details op voor betere metadata
-    details = discogs.get_release_details(chosen.release_id) or chosen
+        if mode == "interactive":
+            show_results(results)
+            try:
+                chosen = prompt_choice(results)
+            except SystemExit:
+                raise
+            if chosen is None:
+                log.append({"track": str(track), "status": "skipped"})
+                return False
+        else:
+            chosen = results[0]
+
+        details = discogs.get_release_details(chosen.release_id) or chosen
 
     # Bepaal wat we gaan schrijven
-    new_title = None
     new_album = None
     new_year = None
     new_genre = None
@@ -355,17 +377,11 @@ def enrich_track(
     if overwrite or not track.comment:
         new_comment = details.url
 
-    if "titel" in fields and details.title != track.title:
-        if mode == "interactive":
-            if confirm_title_change(track.title, details.title):
-                new_title = details.title
-        # In auto-modus passen we de titel niet automatisch aan
-
     if "artwork" in fields:
         artwork_path = discogs.download_artwork(details)
 
     # Niets te doen?
-    if not any([new_title, new_album, new_year, new_genre, new_grouping, new_comment, artwork_path]):
+    if not any([new_album, new_year, new_genre, new_grouping, new_comment, artwork_path]):
         console.print("  [dim]Niets gewijzigd.[/dim]\n")
         log.append({"track": str(track), "status": "no_changes"})
         return False
@@ -373,7 +389,6 @@ def enrich_track(
     if mode != "dry":
         update_track_metadata(
             track,
-            new_title=new_title,
             new_album=new_album,
             new_year=new_year,
             new_genre=new_genre,
@@ -384,8 +399,6 @@ def enrich_track(
 
     # Log entry
     changes = {}
-    if new_title:
-        changes["titel"] = {"van": track.title, "naar": new_title}
     if new_album:
         changes["album"] = {"van": track.album, "naar": new_album}
     if new_year:
@@ -423,8 +436,12 @@ def main():
         )
         sys.exit(1)
 
+    if not check_music_running():
+        console.print("[red]Music.app is niet actief. Start Music.app en probeer opnieuw.[/red]")
+        sys.exit(1)
+
     playlist_name = _resolve_playlist_name(args.playlist) if args.playlist else pick_playlist()
-    fields        = _resolve_fields(args.fields)           if args.fields    else set(FIELDS)
+    fields        = _resolve_fields(args.fields)           if args.fields    else pick_fields()
     mode          = _resolve_mode(args.mode)               if args.mode      else pick_mode()
 
     if mode == "dry":

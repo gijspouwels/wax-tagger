@@ -23,6 +23,7 @@ class DiscogsClient:
         self._client = self._authenticate()
         os.makedirs(config.ARTWORK_TMP_DIR, exist_ok=True)
         self._last_request_time = 0.0
+        self._release_cache: dict[int, Optional["DiscogsRelease"]] = {}
 
     # ─── Authenticatie ─────────────────────────────────────────────────────────
 
@@ -139,15 +140,11 @@ class DiscogsClient:
 
     def search(self, artist: str, title: str, max_results: int = 5) -> list[DiscogsRelease]:
         """
-        Zoek op Discogs via meerdere strategieën (stopt bij de eerste met resultaten):
-        1. Volledige titel + artiest
-        2. Basistitel (bekend suffix gestript) + artiest
-        3. Basistitel + genormaliseerde artiest (koppelteken → spatie)
-        4. Basistitel + artiest zonder feat./presents
-        5. Basistitel + eerste 2 woorden uit suffix-haakjes + artiest zonder feat.
-        6. Titel zonder laatste haakjesgroep + artiest zonder feat.  ← vangt bijv. "(M&S Extended Vocal)"
-        7. Titel zonder laatste haakjesgroep + genormaliseerde artiest
-        8. Eerste 2 woorden van basistitel + artiest zonder feat./ft.
+        Zoek op Discogs via meerdere strategieën (stopt bij de eerste met resultaten).
+        Strategieën 1–12: releasetitel + artiest-varianten.
+        Strategie 13: editor/mixer-naam uit haakjesblok als artiest (bijv. "Underdog" uit "(Underdog Edit)").
+        Fallback: tracktitel-zoekopdracht via track=-parameter, vindt compilaties
+                  waar de trackartiest verschilt van de release-artiest.
         """
         base_title  = self._VERSION_SUFFIX_RE.sub('', title).strip()
         norm_artist = re.sub(r'[-_]', ' ', artist).strip()
@@ -170,6 +167,17 @@ class DiscogsClient:
         # "The Wildchild Experience" → "Wildchild"
         first_word   = no_prefix.split()[0] if no_prefix else ''
 
+        # Editor/mixer-naam uit haakjesblok: "(Underdog Edit)" → "Underdog"
+        _GENERIC_BRACKET = re.compile(
+            r'^(original|extended|radio|club|dub|vocal|instrumental|acapella|album|single|clean|vip)$',
+            re.IGNORECASE,
+        )
+        bracket_editor = ''
+        if bracket_match:
+            raw = re.sub(r'\s+(edits?|mixes?|remixes?|re-edits?|reworks?)$', '', bracket_match.group(1), flags=re.I).strip()
+            if raw and not _GENERIC_BRACKET.match(raw):
+                bracket_editor = raw
+
         strategies = [
             (title,          artist),       # 1.  origineel
             (base_title,     artist),       # 2.  basis titel
@@ -184,6 +192,8 @@ class DiscogsClient:
             (base_title,     first_word),   # 11. eerste woord van gestripte artiest
             (short_title,    no_feat),      # 12. eerste 2 woorden + zonder feat.
         ]
+        if bracket_editor:
+            strategies.append((base_title, bracket_editor))  # 13. editor/mixer als artiest
 
         seen = set()
         for search_title, search_artist in strategies:
@@ -285,12 +295,25 @@ class DiscogsClient:
 
     # ─── Release-details ───────────────────────────────────────────────────────
 
+    def resolve_master(self, master_id: int) -> Optional[int]:
+        """Zet een master-ID om naar het hoofd-release-ID."""
+        try:
+            self._rate_limit()
+            master = self._client.master(master_id)
+            return master.main_release.id
+        except Exception:
+            return None
+
     def get_release_details(self, release_id: int) -> Optional[DiscogsRelease]:
         """
         Haal volledige details op van een release.
         Geeft betere metadata (hogere-res artwork, volledige genres) dan zoekresultaten.
         Bij een lege/foutieve response: één retry na korte pauze, daarna None.
+        Resultaten worden gecached voor de duur van de run.
         """
+        if release_id in self._release_cache:
+            return self._release_cache[release_id]
+
         for attempt in range(2):
             try:
                 self._rate_limit()
@@ -328,7 +351,7 @@ class DiscogsClient:
                 if release.formats:
                     fmt = release.formats[0].get("name")
 
-                return DiscogsRelease(
+                result = DiscogsRelease(
                     release_id=release_id,
                     title=release.title,
                     artist=artist,
@@ -340,10 +363,13 @@ class DiscogsClient:
                     master_id=master_id,
                     format=fmt,
                 )
+                self._release_cache[release_id] = result
+                return result
             except Exception:
                 if attempt == 0:
                     time.sleep(3)
                 else:
+                    self._release_cache[release_id] = None
                     return None
 
         return None
@@ -357,6 +383,12 @@ class DiscogsClient:
         """
         if not release.artwork_url:
             return None
+
+        # Controleer of artwork al gecached is op schijf
+        for ext in (".jpg", ".png"):
+            cached = os.path.join(config.ARTWORK_TMP_DIR, f"release_{release.release_id}{ext}")
+            if os.path.exists(cached):
+                return cached
 
         self._rate_limit()
         try:
