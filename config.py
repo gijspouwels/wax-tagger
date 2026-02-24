@@ -28,3 +28,6 @@ SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
 
 # Tijdelijke map voor artwork downloads
 ARTWORK_TMP_DIR = "/tmp/artwork"
+
+# Map voor sessielogbestanden
+LOG_DIR = os.path.join(os.path.dirname(__file__), "logs")

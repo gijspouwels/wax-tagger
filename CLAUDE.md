@@ -4,7 +4,9 @@
 ```bash
 .venv/bin/python3 main.py
 # Of met flags om prompts over te slaan:
-.venv/bin/python3 main.py -p "Discogs Batch" -m auto -o n
+.venv/bin/python3 main.py -p "Discogs Batch" -m auto -f all
+# Met overwrite:
+.venv/bin/python3 main.py -p "Discogs Batch" -m auto -f all -o
 ```
 
 Vereist macOS met Music.app en een geldig `.oauth_tokens` bestand (aangemaakt na eerste OAuth-login).
@@ -13,20 +15,25 @@ Vereist macOS met Music.app en een geldig `.oauth_tokens` bestand (aangemaakt na
 
 | Bestand | Verantwoordelijkheid |
 |---|---|
-| `main.py` | CLI-flow, argparse, per-track enrichment-loop |
+| `main.py` | CLI-flow, argparse, ClientRegistry, per-track enrichment-loop |
 | `config.py` | Credentials (via env vars), paden |
+| `models.py` | Gemeenschappelijk `Release`-dataclass (Discogs + Spotify) |
+| `utils.py` | `artist_match()`, `title_match()` — zoekresultaat-filtering |
 | `discogs/client.py` | Discogs API: OAuth, zoeken (13 strategieën), release details, artwork download |
-| `discogs/models.py` | `DiscogsRelease` dataclass |
+| `discogs/models.py` | Re-export van `Release` als `DiscogsRelease` (backwards compat) |
+| `spotify/client.py` | Spotify API: client credentials, zoeken (4-query cascade), artwork download |
 | `itunes/bridge.py` | AppleScript-brug: playlists/tracks lezen, metadata + bestandstags schrijven |
 | `itunes/models.py` | `Track` dataclass |
 
 ## Belangrijke ontwerpkeuzes
 
-- **Artwork schrijven**: niet via AppleScript (geeft error -10014), maar direct naar het audiobestand via `mutagen`. Fallback naar `ffmpeg` voor MP3's met corrupte ID3-headers.
+- **Artwork schrijven**: niet via AppleScript (geeft error -10014), maar direct naar het audiobestand via `mutagen`. Fallback naar `ffmpeg` voor MP3's met corrupte ID3-headers. Na het schrijven roept `_refresh_track()` AppleScript `refresh t` aan zodat Music.app de nieuwe afbeelding direct toont.
 - **Label-opslag**: dubbel weggeschreven — Music.app Groepering (zichtbaar in UI) én `TPUB` ID3-tag (leesbaar door Rekordbox).
 - **AppleScript delimiter**: gebruikt `linefeed` als scheidingsteken (niet komma) om genres met komma's correct te parsen.
 - **OAuth**: tokens worden alleen verwijderd bij HTTP 401; netwerk-/parsefouten laten het token intact.
 - **Rate limiting**: 1 seconde tussen Discogs API-calls; 2 retry-pogingen bij lege response.
+- **artist_match / title_match** (`utils.py`): zoekresultaten worden gefilterd op artiest (substring → token-overlap → SequenceMatcher ≥0.5). `title_match` voorkomt dat de vroegste-persing-lookup een remix vervangt door het origineel.
+- **tracknr-veld**: alleen geschreven wanneer de bron Spotify is (Music.app accepteert enkel integers in het track number-veld; Discogs geeft hier geen betrouwbare data).
 
 ## Zoekstrategie (`discogs/client.py`)
 
@@ -46,9 +53,14 @@ Na het kiezen van de beste match roept `enrich_track()` `get_earliest_release_id
 
 ## URL-pinning
 
-Als de opmerking van een track een Discogs-URL bevat (bijv. `https://www.discogs.com/release/12345` of `https://www.discogs.com/master/6789`), wordt de zoekstap overgeslagen en die specifieke release direct gebruikt. Voor master-URL's wordt eerst `resolve_master()` aangeroepen om het hoofd-release-ID op te halen.
+Als de opmerking van een track een herkende URL bevat, wordt de zoekstap overgeslagen en die specifieke release direct gebruikt. Ondersteunde formaten:
 
-Regex: `_DISCOGS_URL_RE` in `main.py` (herkent ook taalvarianten zoals `/nl/release/...`).
+- Discogs release: `https://www.discogs.com/release/12345`
+- Discogs master: `https://www.discogs.com/master/6789` (→ `resolve_master()` voor hoofd-release-ID)
+- Spotify album: `https://open.spotify.com/album/37i9dQZF...`
+- Spotify track: `https://open.spotify.com/track/4iV5W9...` (→ track-details → album-ID)
+
+`_release_id_from_comment()` in `main.py` geeft een `(platform, url_type, id_str)`-triplet terug. De juiste client wordt automatisch gekozen via `ClientRegistry`, ongeacht de `--source` instelling. Met `--ignore-pinned` wordt de URL genegeerd en gewoon gezocht.
 
 ## Testen
 
@@ -66,4 +78,4 @@ c = DiscogsClient.__new__(DiscogsClient)
 
 - Geen `git add .` — `.oauth_tokens` staat in `.gitignore` maar bevat echte credentials.
 - Niet de `ui/`-map uitbreiden — bewust leeg gelaten.
-- Artwork niet via AppleScript proberen te schrijven.
+- Artwork niet via AppleScript proberen te schrijven (error -10014). `refresh t` achteraf is wel OK.

@@ -19,6 +19,8 @@ class Release:
     source_url: str = ""      # Canonieke URL van de release (Discogs/Spotify)
     master_id: Optional[int] = None   # Discogs only; None voor Spotify
     format: Optional[str] = None      # Discogs only; None voor Spotify
+    track_number: Optional[int] = None  # Spotify only; positie van de track op het album
+    total_tracks: Optional[int] = None  # Spotify only; totaal aantal tracks op het album
 
     @property
     def genre_str(self) -> str:

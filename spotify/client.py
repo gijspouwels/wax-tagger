@@ -6,12 +6,14 @@ Token wordt in-memory gecached en automatisch ververst na 3600 seconden.
 """
 
 import os
+import re
 import time
 import base64
 import requests
 from typing import Optional
 
 from models import Release
+from utils import artist_match
 import config
 
 
@@ -62,14 +64,52 @@ class SpotifyClient:
 
     # ─── Zoeken ────────────────────────────────────────────────────────────────
 
+    # Versie-suffixen strippen (zelfde patroon als Discogs)
+    _VERSION_SUFFIX_RE = re.compile(
+        r'\s*[\(\[](original mix|extended mix|extended|clean extended|clean|'
+        r'radio edit|club mix|instrumental|acapella|dub mix|remix|edit|mix|'
+        r'version|vip|remaster|remastered|feat\..*|ft\..*|single version|'
+        r'album version)[^\)\]]*[\)\]]\s*$',
+        re.IGNORECASE,
+    )
+
     def search(self, artist: str, title: str, max_results: int = 5) -> list[Release]:
         """
         Zoek op Spotify via de track-endpoint.
+        Probeert meerdere query-varianten (stopt bij de eerste met resultaten):
+          1. track:"<titel>" artist:"<artiest>"    — meest specifiek
+          2. track:"<basistitel>" artist:"<artiest>" — versiesuffix gestript
+          3. "<basistitel>" artist:"<artiest>"     — titel als keyword
+          4. "<basistitel> <artiest>"              — volledig keyword (meest permissief)
         Retourneert unieke albums (op album_id gededupliceerd) als Release-objecten.
         """
+        base_title = self._VERSION_SUFFIX_RE.sub('', title).strip()
+
+        queries = [
+            f'track:"{title}" artist:"{artist}"',
+            f'track:"{base_title}" artist:"{artist}"',
+            f'"{base_title}" artist:"{artist}"',
+            f'"{base_title}" "{artist}"',
+        ]
+        # Dedup: sla dubbele queries over (bijv. als titel geen suffix had)
+        seen_queries: set[str] = set()
+
+        for q in queries:
+            if q in seen_queries:
+                continue
+            seen_queries.add(q)
+
+            results = [r for r in self._execute_search(q, max_results) if artist_match(artist, r.artist)]
+            if results:
+                return results
+
+        return []
+
+    def _execute_search(self, query: str, max_results: int) -> list[Release]:
+        """Voer één Spotify-zoekopdracht uit en retourneer unieke albums."""
         try:
             data = self._get("search", params={
-                "q": f"track:{title} artist:{artist}",
+                "q": query,
                 "type": "track",
                 "limit": 20,
             })
@@ -87,7 +127,7 @@ class SpotifyClient:
                 continue
             seen_albums.add(album_id)
 
-            release = self._album_to_release(album)
+            release = self._album_to_release(album, track_number=track.get("track_number"))
             if release:
                 releases.append(release)
                 if len(releases) >= max_results:
@@ -163,13 +203,14 @@ class SpotifyClient:
 
     # ─── Interne helpers ────────────────────────────────────────────────────────
 
-    def _album_to_release(self, album: dict, fetch_artist_genres: bool = False) -> Optional[Release]:
+    def _album_to_release(self, album: dict, fetch_artist_genres: bool = False, track_number: Optional[int] = None) -> Optional[Release]:
         """Zet een Spotify album-object om naar een Release."""
         try:
-            album_id   = album.get("id", "")
-            title      = album.get("name", "")
-            label      = album.get("label")
-            genres     = list(album.get("genres") or [])
+            album_id     = album.get("id", "")
+            title        = album.get("name", "")
+            label        = album.get("label")
+            genres       = [g.title() for g in (album.get("genres") or [])]
+            total_tracks = album.get("total_tracks")
 
             # Jaar: alleen het eerste 4-cijferige deel
             release_date = album.get("release_date", "")
@@ -193,7 +234,7 @@ class SpotifyClient:
             if not genres and fetch_artist_genres and artist_id:
                 try:
                     artist_data = self._get(f"artists/{artist_id}")
-                    genres = list(artist_data.get("genres") or [])
+                    genres = [g.title() for g in (artist_data.get("genres") or [])]
                 except Exception:
                     pass
 
@@ -207,6 +248,8 @@ class SpotifyClient:
                 label=label,
                 artwork_url=artwork_url,
                 source_url=f"https://open.spotify.com/album/{album_id}",
+                track_number=track_number,
+                total_tracks=total_tracks,
             )
         except Exception:
             return None

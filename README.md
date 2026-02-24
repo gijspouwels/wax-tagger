@@ -67,17 +67,22 @@ Alle keuzes kunnen ook als flag worden meegegeven om interactieve prompts over t
 |---|---|---|
 | `-p`, `--playlist` | Playlist naam of nummer | `-p "House"` of `-p 5` |
 | `-s`, `--source` | Primaire bron: `discogs` (standaard) of `spotify` | `-s spotify` |
-| `-f`, `--fields` | Te verrijken velden (kommagescheiden) | `-f "1,2,3"` of `-f "album,jaar"` |
-| `-m`, `--mode` | Modus: `1`/`interactive`, `2`/`auto`, `3`/`dry` | `-m auto` |
-| `-o`, `--overwrite` | Bestaande metadata overschrijven | `-o y` of `-o n` |
+| `-f`, `--fields` | Te verrijken velden (kommagescheiden nummers of namen), of `all` voor alles | `-f "1,2,3"` of `-f "album,jaar"` of `-f all` |
+| `-m`, `--mode` | Modus: `interactive`, `auto` of `dry` | `-m auto` |
+| `-o`, `--overwrite` | Bestaande metadata overschrijven (vlag zonder waarde) | `-o` |
+| `--ignore-pinned` | Negeer gepinde URL in opmerkingen, zoek opnieuw | `--ignore-pinned` |
+| `--clear-empty` | Maak velden leeg als het zoekresultaat daar geen waarde voor heeft | `--clear-empty` |
 
-Zonder `-f` worden standaard **alle velden** verrijkt. Niet-opgegeven opties worden interactief gevraagd.
+Zonder `-f` wordt interactief gevraagd welke velden je wil verrijken. Niet-opgegeven opties worden interactief gevraagd.
 
 **Voorbeelden:**
 
 ```bash
 # Discogs, volledig automatisch, alle velden, geen overwrite
-.venv/bin/python3 main.py -p "Playlist Name" -s discogs -m auto -o n
+.venv/bin/python3 main.py -p "Playlist Name" -s discogs -m auto -f all
+
+# Discogs, alle velden, inclusief overschrijven van bestaande metadata
+.venv/bin/python3 main.py -p "Playlist Name" -s discogs -m auto -f all -o
 
 # Spotify als primaire bron, dry-run
 .venv/bin/python3 main.py -p House -s spotify -m dry
@@ -156,20 +161,21 @@ Bij een gepinde URL wordt altijd de bijbehorende client gebruikt, ongeacht de ge
 
 ## Weggeschreven velden
 
-| Music.app-veld | Bron | Bestandstag |
-|---|---|---|
-| Album | Release-titel | — |
-| Jaar | Jaar van release | — |
-| Genre | Genres + styles (Discogs) / artiestgenres (Spotify) | — |
-| Groepering | Label | MP3: `TPUB`, FLAC: `ORGANIZATION` |
-| Opmerkingen | Release-URL (Discogs of Spotify) | — |
-| Artwork | Hoes | MP3/M4A/FLAC |
+| Music.app-veld | Bron | Bestandstag | Opmerking |
+|---|---|---|---|
+| Album | Release-titel | — | |
+| Jaar | Jaar van release | — | |
+| Genre | Genres + styles (Discogs) / artiestgenres (Spotify) | — | |
+| Groepering | Label | MP3: `TPUB`, FLAC: `ORGANIZATION` | |
+| Opmerkingen | Release-URL (Discogs of Spotify) | — | |
+| Artwork | Hoes | MP3/M4A/FLAC | Music.app wordt na schrijven via `refresh` bijgewerkt |
+| Tracknummer | Positie op het album (X/Y) | — | Alleen Spotify |
 
 Het **Label**-veld wordt zowel in Music.app (Groepering) als direct in het audiobestand opgeslagen als `TPUB`-tag, zodat Rekordbox het leest als Label.
 
 ## Logbestand
 
-Na elke sessie wordt een JSON-logbestand aangemaakt (`enricher_DATUM_TIJD.log.json`) met per track de status en de doorgevoerde wijzigingen. Handig als je iets ongedaan wilt maken.
+Na elke sessie wordt een JSON-logbestand aangemaakt in de `logs/`-map (`logs/enricher_DATUM_TIJD.log.json`) met per track de status en de doorgevoerde wijzigingen. Handig als je iets ongedaan wilt maken. De map wordt automatisch aangemaakt en is uitgesloten van versiebeheer.
 
 ## Zoekstrategie
 
@@ -196,8 +202,10 @@ De zoekfunctie probeert automatisch meerdere varianten als een eerste zoekopdrac
 wax-tagger/
 ├── main.py              # Startpunt + CLI-flow
 ├── config.py            # Credentials en instellingen
-├── models.py            # Gemeenschappelijk Release-model
+├── models.py            # Gemeenschappelijk Release-model (Discogs + Spotify)
+├── utils.py             # Gedeelde hulpfuncties: artist_match, title_match
 ├── requirements.txt
+├── logs/                # Sessielogbestanden (automatisch aangemaakt, niet in git)
 ├── .env                 # Lokale credentials (niet in git)
 ├── .oauth_tokens        # Discogs access token (automatisch aangemaakt, niet in git)
 ├── itunes/

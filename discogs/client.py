@@ -15,6 +15,7 @@ import discogs_client
 from typing import Optional
 
 from models import Release as DiscogsRelease
+from utils import artist_match
 import config
 
 
@@ -221,6 +222,8 @@ class DiscogsClient:
                         release = self._parse_search_result(result)
                         if release is None:
                             continue
+                        if not artist_match(artist, release.artist):
+                            continue
                         dedup_key = release.master_id or release.release_id
                         if dedup_key in seen_masters:
                             continue
@@ -392,7 +395,7 @@ class DiscogsClient:
                 if release.labels:
                     label = release.labels[0].name
 
-                master_id = getattr(release, "master_id", None)
+                master_id = release.data.get("master_id") or getattr(release, "master_id", None)
 
                 fmt = None
                 if release.formats:

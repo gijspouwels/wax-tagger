@@ -10,8 +10,8 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Sessielog bestanden
-*.log.json
+# Sessielogbestanden
+logs/
 
 # macOS
 .DS_Store

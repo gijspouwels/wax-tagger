@@ -15,6 +15,8 @@ class Track:
     genre: Optional[str] = None
     grouping: Optional[str] = None  # gebruikt voor Label
     comment: Optional[str] = None   # gebruikt voor Discogs-URL
+    track_number: Optional[int] = None  # positie op het album
+    track_count: Optional[int] = None   # totaal tracks op het album
     playlist_name: str = ""
 
     # Originele waarden voor undo

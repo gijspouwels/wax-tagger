@@ -104,7 +104,17 @@ def get_tracks_from_playlist(playlist_name: str) -> list[Track]:
             on error
                 set tComment to ""
             end try
-            set end of output to (pid & "|||" & tTitle & "|||" & tArtist & "|||" & tAlbum & "|||" & tYear & "|||" & tGenre & "|||" & tGrouping & "|||" & tComment)
+            try
+                set tTrackNum to track number of t as string
+            on error
+                set tTrackNum to "0"
+            end try
+            try
+                set tTrackCount to track count of t as string
+            on error
+                set tTrackCount to "0"
+            end try
+            set end of output to (pid & "|||" & tTitle & "|||" & tArtist & "|||" & tAlbum & "|||" & tYear & "|||" & tGenre & "|||" & tGrouping & "|||" & tComment & "|||" & tTrackNum & "|||" & tTrackCount)
         end repeat
         set AppleScript's text item delimiters to linefeed
         set outputStr to output as string
@@ -120,13 +130,21 @@ def get_tracks_from_playlist(playlist_name: str) -> list[Track]:
     for line in raw.splitlines():
         line = line.strip()
         parts = line.split("|||")
-        if len(parts) < 8:
+        if len(parts) < 10:
             continue
-        pid, title, artist, album, year_str, genre, grouping, comment = parts[:8]
+        pid, title, artist, album, year_str, genre, grouping, comment, track_num_str, track_count_str = parts[:10]
         try:
             year = int(year_str.strip()) if year_str.strip() not in ("0", "") else None
         except ValueError:
             year = None
+        try:
+            track_number = int(track_num_str.strip()) if track_num_str.strip() not in ("0", "") else None
+        except ValueError:
+            track_number = None
+        try:
+            track_count = int(track_count_str.strip()) if track_count_str.strip() not in ("0", "") else None
+        except ValueError:
+            track_count = None
         tracks.append(Track(
             persistent_id=pid.strip(),
             title=title.strip(),
@@ -136,6 +154,8 @@ def get_tracks_from_playlist(playlist_name: str) -> list[Track]:
             genre=genre.strip() or None,
             grouping=grouping.strip() or None,
             comment=comment.strip() or None,
+            track_number=track_number,
+            track_count=track_count,
             playlist_name=playlist_name,
         ))
     return tracks
@@ -149,6 +169,8 @@ def update_track_metadata(
     new_genre: Optional[str] = None,
     new_grouping: Optional[str] = None,
     new_comment: Optional[str] = None,
+    new_track_number: Optional[int] = None,
+    new_track_count: Optional[int] = None,
     artwork_path: Optional[str] = None,
 ) -> None:
     """Schrijf nieuwe metadata terug naar een track in Music.app via persistent ID."""
@@ -171,6 +193,10 @@ def update_track_metadata(
     if new_comment is not None:
         escaped = new_comment.replace('"', '\\"')
         set_statements.append(f'set comment of t to "{escaped}"')
+    if new_track_number is not None:
+        set_statements.append(f'set track number of t to {int(new_track_number)}')
+    if new_track_count is not None:
+        set_statements.append(f'set track count of t to {int(new_track_count)}')
 
     if set_statements:
         sets = "\n            ".join(set_statements)
@@ -189,6 +215,23 @@ def update_track_metadata(
             artwork_path=artwork_path if (artwork_path and os.path.exists(artwork_path)) else None,
             publisher=new_grouping,
         )
+
+    if artwork_path and os.path.exists(artwork_path):
+        _refresh_track(track.persistent_id)
+
+
+def _refresh_track(persistent_id: str) -> None:
+    """Dwingt Music.app de trackmetadata (inclusief artwork) opnieuw uit het bestand te laden."""
+    script = f"""
+    tell application "Music"
+        set t to (first track whose persistent ID is "{persistent_id}")
+        refresh t
+    end tell
+    """
+    try:
+        _run_applescript(script)
+    except RuntimeError:
+        pass  # Refresh is best-effort; fout hier is niet fataal
 
 
 def _get_track_file_path(persistent_id: str) -> Optional[str]:

@@ -23,10 +23,11 @@ from itunes.bridge import check_music_running, get_playlists, get_tracks_from_pl
 from itunes.models import Track
 from discogs.client import DiscogsClient
 from models import Release
+from utils import title_match
 
 console = Console()
 
-FIELDS = ["album", "jaar", "genre", "label", "artwork"]
+FIELDS = ["album", "jaar", "genre", "label", "artwork", "tracknr"]
 
 
 # ─── CLI-argumenten ────────────────────────────────────────────────────────────
@@ -47,26 +48,38 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Te verrijken velden, kommagescheiden nummers of namen.\n"
             f"Opties: {', '.join(f'{i+1}={v}' for i, v in enumerate(FIELDS))}\n"
-            "Standaard: alle velden"
+            "Gebruik 'all' of 'alle' voor alle velden (standaard)"
         ),
     )
     parser.add_argument(
         "-m", "--mode",
-        choices=["1", "2", "3", "interactive", "auto", "dry"],
+        choices=["interactive", "auto", "dry"],
         metavar="MODUS",
-        help="1/interactive, 2/auto, 3/dry (standaard: interactive)",
+        help="interactive, auto of dry (standaard: interactive)",
     )
     parser.add_argument(
         "-o", "--overwrite",
-        choices=["y", "n"],
-        metavar="y|n",
-        help="Bestaande metadata overschrijven (y=ja, n=nee)",
+        action="store_true",
+        default=False,
+        help="Bestaande metadata overschrijven",
     )
     parser.add_argument(
         "-s", "--source",
         choices=["discogs", "spotify"],
         metavar="BRON",
         help="Primaire metadatabron: discogs (standaard) of spotify",
+    )
+    parser.add_argument(
+        "--ignore-pinned",
+        action="store_true",
+        default=False,
+        help="Negeer gepinde URLs in opmerkingen en zoek opnieuw",
+    )
+    parser.add_argument(
+        "--clear-empty",
+        action="store_true",
+        default=False,
+        help="Maak velden leeg als het zoekresultaat daar geen waarde voor heeft (bijv. geen genre)",
     )
     return parser.parse_args()
 
@@ -107,10 +120,7 @@ def _resolve_fields(arg: str) -> set[str]:
 
 def _resolve_mode(arg: str) -> str:
     """Zet een CLI-argument om naar een modusnaam."""
-    return {
-        "1": "interactive", "2": "auto", "3": "dry",
-        "interactive": "interactive", "auto": "auto", "dry": "dry",
-    }.get(arg.lower(), "interactive")
+    return arg.lower() if arg.lower() in ("interactive", "auto", "dry") else "interactive"
 
 
 # ─── ClientRegistry ────────────────────────────────────────────────────────────
@@ -360,6 +370,8 @@ def enrich_track(
     fields: set[str],
     mode: str,
     overwrite: bool,
+    ignore_pinned: bool,
+    clear_empty: bool,
     log: list[dict],
 ) -> bool:
     """
@@ -367,7 +379,7 @@ def enrich_track(
     Als de primaire bron niets vindt, wordt de andere bron als fallback gebruikt.
     Geeft True terug als er iets bijgewerkt is.
     """
-    pinned = _release_id_from_comment(track.comment)
+    pinned = None if ignore_pinned else _release_id_from_comment(track.comment)
 
     if pinned:
         pin_platform, pin_type, pin_id = pinned
@@ -390,6 +402,8 @@ def enrich_track(
     new_genre = None
     new_grouping = None
     new_comment = None
+    new_track_number = None
+    new_track_count = None
     artwork_path = None
 
     if "album" in fields and (overwrite or not track.album):
@@ -399,20 +413,33 @@ def enrich_track(
         new_year = details.year
 
     if "genre" in fields and (overwrite or not track.genre):
-        new_genre = details.genre_str or None
+        if details.genre_str:
+            new_genre = details.genre_str
+        elif clear_empty and track.genre:
+            new_genre = ""
 
     if "label" in fields and (overwrite or not track.grouping):
-        new_grouping = details.label or None
+        if details.label:
+            new_grouping = details.label
+        elif clear_empty and track.grouping:
+            new_grouping = ""
 
     if overwrite or not track.comment:
         new_comment = details.source_url or None
+
+    # tracknr: alleen van Spotify (Music.app accepteert alleen integers in dit veld)
+    is_spotify = details.source_url and "spotify" in details.source_url
+    if "tracknr" in fields and is_spotify and (overwrite or not track.track_number):
+        if details.track_number is not None:
+            new_track_number = details.track_number
+            new_track_count = details.total_tracks
 
     if "artwork" in fields:
         artwork_source = "spotify" if details.source_url and "spotify" in details.source_url else "discogs"
         artwork_path = registry.get(artwork_source).download_artwork(details)
 
     # Niets te doen?
-    if not any([new_album, new_year, new_genre, new_grouping, new_comment, artwork_path]):
+    if not any([new_album, new_year, new_genre is not None, new_grouping is not None, new_comment, new_track_number, artwork_path]):
         console.print("  [dim]Niets gewijzigd.[/dim]\n")
         log.append({"track": str(track), "status": "no_changes"})
         return False
@@ -425,6 +452,8 @@ def enrich_track(
             new_genre=new_genre,
             new_grouping=new_grouping,
             new_comment=new_comment,
+            new_track_number=new_track_number,
+            new_track_count=new_track_count,
             artwork_path=artwork_path,
         )
 
@@ -434,12 +463,14 @@ def enrich_track(
         changes["album"] = {"van": track.album, "naar": new_album}
     if new_year:
         changes["jaar"] = {"van": track.year, "naar": new_year}
-    if new_genre:
-        changes["genre"] = {"van": track.genre, "naar": new_genre}
-    if new_grouping:
-        changes["label"] = {"van": track.grouping, "naar": new_grouping}
+    if new_genre is not None:
+        changes["genre"] = {"van": track.genre, "naar": new_genre or "(leeg)"}
+    if new_grouping is not None:
+        changes["label"] = {"van": track.grouping, "naar": new_grouping or "(leeg)"}
     if new_comment:
         changes["opmerkingen"] = {"van": track.comment, "naar": new_comment}
+    if new_track_number is not None:
+        changes["tracknr"] = {"van": track.track_number, "naar": f"{new_track_number}/{new_track_count}"}
     if artwork_path:
         changes["artwork"] = "bijgewerkt"
 
@@ -498,16 +529,28 @@ def _search_with_fallback(
             chosen = results[0]
 
         # Discogs-specific: zoek vroegste persing via master
-        if source == "discogs" and chosen.master_id:
+        # Haal details eerst op — master_id is hier betrouwbaarder dan in zoekresultaten
+        if source == "discogs":
             discogs_client = registry.get_discogs()
-            release_id = int(chosen.release_id)
-            earliest = discogs_client.get_earliest_release_id(chosen.master_id, release_id, chosen.year)
-            if earliest != release_id:
-                console.print(f"  [dim]Eerdere persing gevonden via master — release #{earliest} gebruikt.[/dim]")
-                release_id = earliest
-            return discogs_client.get_release_details(release_id) or chosen
+            details = discogs_client.get_release_details(int(chosen.release_id)) or chosen
+            master_id = details.master_id or chosen.master_id
+            if master_id:
+                release_id = int(details.release_id)
+                earliest = discogs_client.get_earliest_release_id(master_id, release_id, details.year)
+                if earliest != release_id:
+                    earliest_details = discogs_client.get_release_details(earliest)
+                    if earliest_details and title_match(track.title, earliest_details.title):
+                        console.print(f"  [dim]Eerdere persing gevonden via master — release #{earliest} gebruikt.[/dim]")
+                        details = earliest_details
+                    else:
+                        console.print(f"  [dim]Eerdere persing (#{earliest}) heeft andere titel — oorspronkelijke release behouden.[/dim]")
+            return details
         else:
-            return client.get_release_details(chosen.release_id) or chosen
+            details = client.get_release_details(chosen.release_id) or chosen
+            # Bewaar track_number uit zoekresultaat (niet beschikbaar bij album-detail fetch)
+            if details is not chosen and chosen.track_number is not None:
+                details.track_number = chosen.track_number
+            return details
 
     return None
 
@@ -549,8 +592,8 @@ def main():
 
     if mode == "dry":
         overwrite = True
-    elif args.overwrite is not None:
-        overwrite = args.overwrite == "y"
+    elif args.overwrite:
+        overwrite = True
     else:
         overwrite = pick_overwrite()
 
@@ -567,7 +610,7 @@ def main():
         for i, track in enumerate(tracks, 1):
             show_track_header(track, i, total)
             try:
-                if enrich_track(track, registry, source, fields, mode, overwrite, log):
+                if enrich_track(track, registry, source, fields, mode, overwrite, args.ignore_pinned, args.clear_empty, log):
                     updated += 1
             except KeyboardInterrupt:
                 console.print("\n[yellow]Onderbroken door gebruiker.[/yellow]")
@@ -599,7 +642,8 @@ def main():
             parts.append(f"[red]{errors} fouten[/red]")
         console.print(f"\n[bold]Klaar![/bold] " + " · ".join(parts))
 
-        log_path = f"enricher_{datetime.datetime.now().strftime('%Y-%m-%d_%H%M')}.log.json"
+        os.makedirs(config.LOG_DIR, exist_ok=True)
+        log_path = os.path.join(config.LOG_DIR, f"enricher_{datetime.datetime.now().strftime('%Y-%m-%d_%H%M')}.log.json")
         with open(log_path, "w", encoding="utf-8") as f:
             json.dump(log, f, ensure_ascii=False, indent=2)
         console.print(f"[dim]Logbestand: {log_path}[/dim]\n")
