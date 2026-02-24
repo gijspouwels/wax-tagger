@@ -22,7 +22,7 @@ import config
 from itunes.bridge import check_music_running, get_playlists, get_tracks_from_playlist, update_track_metadata
 from itunes.models import Track
 from discogs.client import DiscogsClient
-from discogs.models import DiscogsRelease
+from models import Release
 
 console = Console()
 
@@ -61,6 +61,12 @@ def parse_args() -> argparse.Namespace:
         choices=["y", "n"],
         metavar="y|n",
         help="Bestaande metadata overschrijven (y=ja, n=nee)",
+    )
+    parser.add_argument(
+        "-s", "--source",
+        choices=["discogs", "spotify"],
+        metavar="BRON",
+        help="Primaire metadatabron: discogs (standaard) of spotify",
     )
     return parser.parse_args()
 
@@ -105,6 +111,32 @@ def _resolve_mode(arg: str) -> str:
         "1": "interactive", "2": "auto", "3": "dry",
         "interactive": "interactive", "auto": "auto", "dry": "dry",
     }.get(arg.lower(), "interactive")
+
+
+# ─── ClientRegistry ────────────────────────────────────────────────────────────
+
+class ClientRegistry:
+    """Lazy initialisatie van metadata-clients. Elke client wordt pas aangemaakt bij eerste gebruik."""
+
+    def __init__(self):
+        self._discogs: Optional[DiscogsClient] = None
+        self._spotify = None  # SpotifyClient; geïmporteerd bij gebruik
+
+    def get_discogs(self) -> DiscogsClient:
+        if self._discogs is None:
+            self._discogs = DiscogsClient()
+        return self._discogs
+
+    def get_spotify(self):
+        if self._spotify is None:
+            from spotify.client import SpotifyClient
+            self._spotify = SpotifyClient()
+        return self._spotify
+
+    def get(self, source: str):
+        if source == "spotify":
+            return self.get_spotify()
+        return self.get_discogs()
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -198,6 +230,15 @@ def pick_overwrite() -> bool:
     )
 
 
+def pick_source() -> str:
+    """Kies de primaire metadatabron."""
+    console.print("\n[bold]Metadatabron:[/bold]")
+    console.print("  [cyan]1[/cyan]  Discogs  — vinylcollecties, uitgebreide genre/stijl-tags")
+    console.print("  [cyan]2[/cyan]  Spotify  — populaire releases, brede artiestcoverage")
+    raw = Prompt.ask("Keuze", default="1")
+    return {"1": "discogs", "2": "spotify"}.get(raw.strip(), "discogs")
+
+
 # ─── Matchingscherm ────────────────────────────────────────────────────────────
 
 def show_track_header(track: Track, index: int, total: int):
@@ -217,7 +258,7 @@ def show_track_header(track: Track, index: int, total: int):
     console.print()
 
 
-def show_results(results: list[DiscogsRelease]) -> None:
+def show_results(results: list[Release]) -> None:
     for i, r in enumerate(results, 1):
         marker = "[bold cyan]★[/bold cyan] " if i == 1 else "  "
         year = str(r.year) if r.year else "?"
@@ -230,7 +271,7 @@ def show_results(results: list[DiscogsRelease]) -> None:
     console.print()
 
 
-def prompt_choice(results: list[DiscogsRelease]) -> Optional[DiscogsRelease]:
+def prompt_choice(results: list[Release]) -> Optional[Release]:
     """
     Vraag de gebruiker welke release te gebruiken.
     Geeft None terug bij skip, SystemExit bij quit.
@@ -261,13 +302,26 @@ _DISCOGS_URL_RE = re.compile(
     r'https?://(?:www\.)?discogs\.com/(?:[a-z]{2}/)?(release|master)/(\d+)',
     re.IGNORECASE,
 )
+_SPOTIFY_URL_RE = re.compile(
+    r'https?://open\.spotify\.com/(album|track)/([A-Za-z0-9]+)',
+    re.IGNORECASE,
+)
 
-def _release_id_from_comment(comment: Optional[str]) -> Optional[tuple[str, int]]:
-    """Geeft (type, id) terug als de opmerking een Discogs release- of master-URL bevat."""
+def _release_id_from_comment(comment: Optional[str]) -> Optional[tuple[str, str, str]]:
+    """
+    Geeft (platform, url_type, id_str) terug als de opmerking een herkende URL bevat.
+    Platforms: "discogs" of "spotify"
+    url_type:  "release"/"master" (Discogs) of "album"/"track" (Spotify)
+    """
     if not comment:
         return None
     m = _DISCOGS_URL_RE.search(comment)
-    return (m.group(1).lower(), int(m.group(2))) if m else None
+    if m:
+        return ("discogs", m.group(1).lower(), m.group(2))
+    m = _SPOTIFY_URL_RE.search(comment)
+    if m:
+        return ("spotify", m.group(1).lower(), m.group(2))
+    return None
 
 def _clear_discogs_fields(track: Track, fields: set[str], mode: str, log: list[dict]) -> None:
     """Maak Discogs-velden leeg wanneer er geen match gevonden is en overwrite=True."""
@@ -301,65 +355,34 @@ def _clear_discogs_fields(track: Track, fields: set[str], mode: str, log: list[d
 
 def enrich_track(
     track: Track,
-    discogs: DiscogsClient,
+    registry: "ClientRegistry",
+    primary_source: str,
     fields: set[str],
     mode: str,
     overwrite: bool,
     log: list[dict],
 ) -> bool:
     """
-    Zoek een track op Discogs en schrijf de gekozen metadata terug.
+    Zoek een track op de primaire bron en schrijf de gekozen metadata terug.
+    Als de primaire bron niets vindt, wordt de andere bron als fallback gebruikt.
     Geeft True terug als er iets bijgewerkt is.
     """
     pinned = _release_id_from_comment(track.comment)
 
     if pinned:
-        url_type, url_id = pinned
-        if url_type == "master":
-            console.print(f"  [dim]Discogs master-URL gevonden — hoofdrelease ophalen.[/dim]")
-            release_id = discogs.resolve_master(url_id)
-            if not release_id:
-                console.print("  [red]Master niet gevonden via URL — overgeslagen.[/red]\n")
-                log.append({"track": str(track), "status": "error", "message": "master niet gevonden via opmerking-URL"})
-                return False
-        else:
-            console.print(f"  [dim]Discogs-URL gevonden in opmerking — zoeken overgeslagen.[/dim]")
-            release_id = url_id
-        details = discogs.get_release_details(release_id)
+        pin_platform, pin_type, pin_id = pinned
+        client = registry.get(pin_platform)
+        label_platform = pin_platform.capitalize()
+        console.print(f"  [dim]{label_platform}-URL gevonden in opmerking — zoeken overgeslagen.[/dim]")
+        details = client.get_details_from_pinned(pin_type, pin_id)
         if not details:
-            console.print("  [red]Release niet gevonden via URL — overgeslagen.[/red]\n")
-            log.append({"track": str(track), "status": "error", "message": "release niet gevonden via opmerking-URL"})
+            console.print(f"  [red]Release niet gevonden via {label_platform}-URL — overgeslagen.[/red]\n")
+            log.append({"track": str(track), "status": "error", "message": f"release niet gevonden via {pin_platform} opmerking-URL"})
             return False
     else:
-        results = discogs.search(track.artist, track.title)
-        if not results:
-            if overwrite:
-                _clear_discogs_fields(track, fields, mode, log)
-                return True
-            console.print("  [dim]Niets gevonden op Discogs — overgeslagen.[/dim]\n")
-            log.append({"track": str(track), "status": "not_found"})
+        details = _search_with_fallback(track, registry, primary_source, fields, mode, overwrite, log)
+        if not details:
             return False
-
-        if mode == "interactive":
-            show_results(results)
-            try:
-                chosen = prompt_choice(results)
-            except SystemExit:
-                raise
-            if chosen is None:
-                log.append({"track": str(track), "status": "skipped"})
-                return False
-        else:
-            chosen = results[0]
-
-        # Controleer via de master of er een vroegere persing bestaat
-        release_id = chosen.release_id
-        if chosen.master_id:
-            release_id = discogs.get_earliest_release_id(chosen.master_id, chosen.release_id, chosen.year)
-            if release_id != chosen.release_id:
-                console.print(f"  [dim]Eerdere persing gevonden via master — release #{release_id} gebruikt.[/dim]")
-
-        details = discogs.get_release_details(release_id) or chosen
 
     # Bepaal wat we gaan schrijven
     new_album = None
@@ -382,10 +405,11 @@ def enrich_track(
         new_grouping = details.label or None
 
     if overwrite or not track.comment:
-        new_comment = details.url
+        new_comment = details.source_url or None
 
     if "artwork" in fields:
-        artwork_path = discogs.download_artwork(details)
+        artwork_source = "spotify" if details.source_url and "spotify" in details.source_url else "discogs"
+        artwork_path = registry.get(artwork_source).download_artwork(details)
 
     # Niets te doen?
     if not any([new_album, new_year, new_genre, new_grouping, new_comment, artwork_path]):
@@ -427,29 +451,101 @@ def enrich_track(
     return True
 
 
+def _search_with_fallback(
+    track: Track,
+    registry: "ClientRegistry",
+    primary_source: str,
+    fields: set[str],
+    mode: str,
+    overwrite: bool,
+    log: list[dict],
+) -> "Optional[Release]":
+    """
+    Zoekt op de primaire bron; val terug op de andere bron als er niets gevonden wordt.
+    Retourneert de gekozen Release, of None als er niets gevonden of overgeslagen is.
+    """
+    fallback_source = "spotify" if primary_source == "discogs" else "discogs"
+
+    for attempt, source in enumerate([primary_source, fallback_source]):
+        is_fallback = (attempt > 0)
+        client = registry.get(source)
+        results = client.search(track.artist, track.title)
+
+        if not results:
+            if is_fallback:
+                if overwrite:
+                    _clear_discogs_fields(track, fields, mode, log)
+                else:
+                    console.print(f"  [dim]Niets gevonden op {primary_source.capitalize()} of {fallback_source.capitalize()} — overgeslagen.[/dim]\n")
+                    log.append({"track": str(track), "status": "not_found"})
+                return None
+            console.print(f"  [dim]Niets gevonden op {source.capitalize()} — probeer {fallback_source.capitalize()}...[/dim]")
+            continue
+
+        if is_fallback:
+            console.print(f"  [dim]Gevonden via fallback ({source.capitalize()}).[/dim]")
+
+        if mode == "interactive":
+            show_results(results)
+            try:
+                chosen = prompt_choice(results)
+            except SystemExit:
+                raise
+            if chosen is None:
+                log.append({"track": str(track), "status": "skipped"})
+                return None
+        else:
+            chosen = results[0]
+
+        # Discogs-specific: zoek vroegste persing via master
+        if source == "discogs" and chosen.master_id:
+            discogs_client = registry.get_discogs()
+            release_id = int(chosen.release_id)
+            earliest = discogs_client.get_earliest_release_id(chosen.master_id, release_id, chosen.year)
+            if earliest != release_id:
+                console.print(f"  [dim]Eerdere persing gevonden via master — release #{earliest} gebruikt.[/dim]")
+                release_id = earliest
+            return discogs_client.get_release_details(release_id) or chosen
+        else:
+            return client.get_release_details(chosen.release_id) or chosen
+
+    return None
+
+
 # ─── Hoofdprogramma ────────────────────────────────────────────────────────────
 
 def main():
     args = parse_args()
     header()
 
-    # Controleer Discogs OAuth-credentials
-    if not config.DISCOGS_CONSUMER_KEY or not config.DISCOGS_CONSUMER_SECRET:
-        console.print(
-            "[red]Discogs consumer key/secret niet ingesteld![/red]\n"
-            "Vul [bold]DISCOGS_CONSUMER_KEY[/bold] en [bold]DISCOGS_CONSUMER_SECRET[/bold] "
-            "in [bold]config.py[/bold] of als omgevingsvariabelen.\n\n"
-            "Maak een app aan op: https://www.discogs.com/settings/developers"
-        )
-        sys.exit(1)
-
     if not check_music_running():
         console.print("[red]Music.app is niet actief. Start Music.app en probeer opnieuw.[/red]")
         sys.exit(1)
 
-    playlist_name = _resolve_playlist_name(args.playlist) if args.playlist else pick_playlist()
-    fields        = _resolve_fields(args.fields)           if args.fields    else pick_fields()
-    mode          = _resolve_mode(args.mode)               if args.mode      else pick_mode()
+    playlist_name  = _resolve_playlist_name(args.playlist) if args.playlist else pick_playlist()
+    source         = args.source if args.source else pick_source()
+    fields         = _resolve_fields(args.fields)          if args.fields   else pick_fields()
+    mode           = _resolve_mode(args.mode)              if args.mode     else pick_mode()
+
+    # Controleer credentials voor de gekozen bron
+    if source == "discogs":
+        if not config.DISCOGS_CONSUMER_KEY or not config.DISCOGS_CONSUMER_SECRET:
+            console.print(
+                "[red]Discogs consumer key/secret niet ingesteld![/red]\n"
+                "Vul [bold]DISCOGS_CONSUMER_KEY[/bold] en [bold]DISCOGS_CONSUMER_SECRET[/bold] "
+                "in [bold].env[/bold] of als omgevingsvariabelen.\n\n"
+                "Maak een app aan op: https://www.discogs.com/settings/developers"
+            )
+            sys.exit(1)
+    elif source == "spotify":
+        if not config.SPOTIFY_CLIENT_ID or not config.SPOTIFY_CLIENT_SECRET:
+            console.print(
+                "[red]Spotify Client ID/Secret niet ingesteld![/red]\n"
+                "Vul [bold]SPOTIFY_CLIENT_ID[/bold] en [bold]SPOTIFY_CLIENT_SECRET[/bold] "
+                "in [bold].env[/bold] of als omgevingsvariabelen.\n\n"
+                "Maak een app aan op: https://developer.spotify.com/dashboard"
+            )
+            sys.exit(1)
 
     if mode == "dry":
         overwrite = True
@@ -463,7 +559,7 @@ def main():
     total = len(tracks)
     console.print(f"[dim]{total} tracks gevonden.[/dim]\n")
 
-    discogs = DiscogsClient()
+    registry = ClientRegistry()
     log = []
     updated = 0
 
@@ -471,7 +567,7 @@ def main():
         for i, track in enumerate(tracks, 1):
             show_track_header(track, i, total)
             try:
-                if enrich_track(track, discogs, fields, mode, overwrite, log):
+                if enrich_track(track, registry, source, fields, mode, overwrite, log):
                     updated += 1
             except KeyboardInterrupt:
                 console.print("\n[yellow]Onderbroken door gebruiker.[/yellow]")

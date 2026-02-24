@@ -21,5 +21,10 @@ OAUTH_TOKEN_FILE = os.path.join(os.path.dirname(__file__), ".oauth_tokens")
 # User-agent vereist door Discogs API (app-naam + versie)
 DISCOGS_USER_AGENT = "WaxTagger/1.0"
 
+# ── Spotify API credentials ────────────────────────────────────────────────────
+# Aangemaakt op: https://developer.spotify.com/dashboard
+SPOTIFY_CLIENT_ID     = os.environ.get("SPOTIFY_CLIENT_ID",     "")
+SPOTIFY_CLIENT_SECRET = os.environ.get("SPOTIFY_CLIENT_SECRET", "")
+
 # Tijdelijke map voor artwork downloads
 ARTWORK_TMP_DIR = "/tmp/artwork"

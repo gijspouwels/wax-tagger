@@ -14,7 +14,7 @@ import requests
 import discogs_client
 from typing import Optional
 
-from .models import DiscogsRelease
+from models import Release as DiscogsRelease
 import config
 
 
@@ -279,7 +279,7 @@ class DiscogsClient:
                 fmt = result.formats[0].get("name")
 
             return DiscogsRelease(
-                release_id=release_id,
+                release_id=str(release_id),
                 title=album_part.strip(),
                 artist=artist_part.strip(),
                 year=year,
@@ -287,6 +287,7 @@ class DiscogsClient:
                 styles=styles,
                 label=label,
                 artwork_url=artwork_url,
+                source_url=f"https://www.discogs.com/release/{release_id}",
                 master_id=master_id,
                 format=fmt,
             )
@@ -336,13 +337,27 @@ class DiscogsClient:
         except Exception:
             return None
 
-    def get_release_details(self, release_id: int) -> Optional[DiscogsRelease]:
+    def get_details_from_pinned(self, url_type: str, id_str: str) -> Optional[DiscogsRelease]:
+        """
+        Haal release-details op vanuit een gepinde Discogs-URL.
+        url_type: "release" of "master"
+        id_str:   het numerieke ID als string
+        """
+        release_id = int(id_str)
+        if url_type == "master":
+            release_id = self.resolve_master(release_id)
+            if not release_id:
+                return None
+        return self.get_release_details(release_id)
+
+    def get_release_details(self, release_id: "int | str") -> Optional[DiscogsRelease]:
         """
         Haal volledige details op van een release.
         Geeft betere metadata (hogere-res artwork, volledige genres) dan zoekresultaten.
         Bij een lege/foutieve response: één retry na korte pauze, daarna None.
         Resultaten worden gecached voor de duur van de run.
         """
+        release_id = int(release_id)
         if release_id in self._release_cache:
             return self._release_cache[release_id]
 
@@ -384,7 +399,7 @@ class DiscogsClient:
                     fmt = release.formats[0].get("name")
 
                 result = DiscogsRelease(
-                    release_id=release_id,
+                    release_id=str(release_id),
                     title=release.title,
                     artist=artist,
                     year=year,
@@ -392,6 +407,7 @@ class DiscogsClient:
                     styles=styles,
                     label=label,
                     artwork_url=artwork_url,
+                    source_url=f"https://www.discogs.com/release/{release_id}",
                     master_id=master_id,
                     format=fmt,
                 )
