@@ -85,11 +85,11 @@ class DiscogsClient:
         # Stap 1: request token + autorisatie-URL ophalen
         request_token, request_secret, authorize_url = client.get_authorize_url()
 
-        print(f"\nOpen deze URL in je browser om de app te autoriseren:\n{authorize_url}\n")
+        print(f"\nOpen this URL in your browser to authorize the app:\n{authorize_url}\n")
         webbrowser.open(authorize_url)
 
         # Stap 2: verifier invoeren (Discogs toont deze na goedkeuring)
-        verifier = input("Voer de verifier-code in die Discogs geeft: ").strip()
+        verifier = input("Enter the verifier code shown by Discogs: ").strip()
 
         # Stap 3: request token in fetcher herstellen en verifier inwisselen
         client._fetcher.store_token(request_token, request_secret)
@@ -103,7 +103,7 @@ class DiscogsClient:
             }, f)
         os.chmod(config.OAUTH_TOKEN_FILE, 0o600)  # alleen eigenaar kan lezen
 
-        print(f"Authenticatie geslaagd! Token opgeslagen in {config.OAUTH_TOKEN_FILE}\n")
+        print(f"Authentication successful! Token saved to {config.OAUTH_TOKEN_FILE}\n")
         return client
 
     # ─── Rate limiting ─────────────────────────────────────────────────────────

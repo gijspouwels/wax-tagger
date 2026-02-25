@@ -1,15 +1,17 @@
 # WaxTagger
 
-Verrijkt tracks in je Apple Music/iTunes library met metadata van [Discogs](https://www.discogs.com) of [Spotify](https://open.spotify.com): album, jaartal, genre, label, artwork en de release-URL. Werkt per playlist, met een interactieve of automatische modus.
+Enriches tracks in your Apple Music/iTunes library with metadata from [Discogs](https://www.discogs.com) or [Spotify](https://open.spotify.com): album, year, genre, label, artwork, and release URL. Works per playlist, with an interactive or automatic mode.
 
-## Vereisten
+![WaxTagger in action](docs/screenshot.png)
 
-- macOS met Apple Music/iTunes
+## Requirements
+
+- macOS with Apple Music/iTunes
 - Python 3.11+
-- [ffmpeg](https://ffmpeg.org) (voor MP3's met corrupte ID3-header): `brew install ffmpeg`
-- Een gratis Discogs-account met een geregistreerde app (zie hieronder), en/of een Spotify Developer-app
+- [ffmpeg](https://ffmpeg.org) (for MP3s with corrupt ID3 headers): `brew install ffmpeg`
+- A free Discogs account with a registered app (see below), and/or a Spotify Developer app
 
-## Installatie
+## Installation
 
 ```bash
 git clone https://github.com/gijspouwels/wax-tagger.git
@@ -18,132 +20,133 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
-## Discogs configureren
+## Configuring Discogs
 
-1. Ga naar [discogs.com/settings/developers](https://www.discogs.com/settings/developers)
-2. Klik op **Create an application**
-3. Vul een naam in (bijv. "WaxTagger") en sla op
-4. Kopieer de **Consumer Key** en **Consumer Secret**
-5. Maak een `.env`-bestand aan in de projectmap:
-
-```
-DISCOGS_CONSUMER_KEY=jouw_consumer_key
-DISCOGS_CONSUMER_SECRET=jouw_consumer_secret
-```
-
-Bij de eerste keer opent automatisch een browser voor OAuth-autorisatie. Voer de verifier-code in die Discogs toont. Het access token wordt opgeslagen in `.oauth_tokens` en hoef je daarna niet meer in te voeren.
-
-## Spotify configureren
-
-1. Ga naar [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
-2. Log in met je Spotify-account en klik op **Create app**
-3. Vul een naam en beschrijving in; als Redirect URI kun je `http://localhost` gebruiken
-4. Open de app en ga naar **Settings** → kopieer de **Client ID** en **Client Secret**
-5. Voeg ze toe aan je `.env`-bestand:
+1. Go to [discogs.com/settings/developers](https://www.discogs.com/settings/developers)
+2. Click **Create an application**
+3. Fill in a name (e.g. "WaxTagger") and save
+4. Copy the **Consumer Key** and **Consumer Secret**
+5. Create a `.env` file in the project folder:
 
 ```
-SPOTIFY_CLIENT_ID=jouw_client_id
-SPOTIFY_CLIENT_SECRET=jouw_client_secret
+DISCOGS_CONSUMER_KEY=your_consumer_key
+DISCOGS_CONSUMER_SECRET=your_consumer_secret
 ```
 
-> **Let op:** WaxTagger gebruikt de *Client Credentials Flow* — er is geen browser-login of gebruikersaccount nodig. Alleen de app-credentials zijn vereist.
+On first run, a browser will open automatically for OAuth authorization. Enter the verifier code shown by Discogs. The access token is saved in `.oauth_tokens` and won't need to be entered again.
 
-**Beperkingen t.o.v. Discogs:**
-- Genres komen van artiestsniveau (Spotify heeft zelden genres op albumniveau); soms wat breed
-- Style-tags ontbreken (Discogs-specifiek)
-- Artwork is maximaal ~300px (bewuste keuze voor bestandsgrootte)
+## Configuring Spotify
 
-## Gebruik
+1. Go to [developer.spotify.com/dashboard](https://developer.spotify.com/dashboard)
+2. Log in with your Spotify account and click **Create app**
+3. Fill in a name and description; you can use `http://localhost` as the Redirect URI
+4. Open the app and go to **Settings** → copy the **Client ID** and **Client Secret**
+5. Add them to your `.env` file:
+
+```
+SPOTIFY_CLIENT_ID=your_client_id
+SPOTIFY_CLIENT_SECRET=your_client_secret
+```
+
+> **Note:** WaxTagger uses the *Client Credentials Flow* — no browser login or user account is required. Only the app credentials are needed.
+
+**Limitations compared to Discogs:**
+- Genres come from the artist level (Spotify rarely has genres at the album level); can be broad
+- Style tags are absent (Discogs-specific)
+- Artwork is capped at ~300px (intentional choice for file size)
+
+## Usage
 
 ```bash
 .venv/bin/python3 main.py
 ```
 
-### CLI-flags
+### CLI flags
 
-Alle keuzes kunnen ook als flag worden meegegeven om interactieve prompts over te slaan:
+All choices can also be passed as flags to skip interactive prompts:
 
-| Flag | Omschrijving | Voorbeeld |
+| Flag | Description | Example |
 |---|---|---|
-| `-p`, `--playlist` | Playlist naam of nummer | `-p "House"` of `-p 5` |
-| `-s`, `--source` | Primaire bron: `discogs` (standaard) of `spotify` | `-s spotify` |
-| `-f`, `--fields` | Te verrijken velden (kommagescheiden nummers of namen), of `all` voor alles | `-f "1,2,3"` of `-f "album,jaar"` of `-f all` |
-| `-m`, `--mode` | Modus: `interactive`, `auto` of `dry` | `-m auto` |
-| `-o`, `--overwrite` | Bestaande metadata overschrijven (vlag zonder waarde) | `-o` |
-| `--ignore-pinned` | Negeer gepinde URL in opmerkingen, zoek opnieuw | `--ignore-pinned` |
-| `--clear-empty` | Maak velden leeg als het zoekresultaat daar geen waarde voor heeft | `--clear-empty` |
+| `-p`, `--playlist` | Playlist name or number | `-p "House"` or `-p 5` |
+| `-s`, `--source` | Primary source: `discogs` (default) or `spotify` | `-s spotify` |
+| `-f`, `--fields` | Fields to enrich (comma-separated numbers or names), or `all` | `-f "1,2,3"` or `-f "album,year"` or `-f all` |
+| `-m`, `--mode` | Mode: `interactive`, `auto`, or `dry` | `-m auto` |
+| `-o`, `--overwrite` | Overwrite existing metadata (flag, no value) | `-o` |
+| `--ignore-pinned` | Ignore pinned URL in comments, search instead | `--ignore-pinned` |
+| `--clear-empty` | Clear fields when the search result has no value for them | `--clear-empty` |
 
-Zonder `-f` wordt interactief gevraagd welke velden je wil verrijken. Niet-opgegeven opties worden interactief gevraagd.
+Without `-f`, you will be asked interactively which fields to enrich. Unspecified options are asked interactively.
 
-**Voorbeelden:**
+**Examples:**
 
 ```bash
-# Discogs, volledig automatisch, alle velden, geen overwrite
+# Discogs, fully automatic, all fields, no overwrite
 .venv/bin/python3 main.py -p "Playlist Name" -s discogs -m auto -f all
 
-# Discogs, alle velden, inclusief overschrijven van bestaande metadata
+# Discogs, all fields, including overwriting existing metadata
 .venv/bin/python3 main.py -p "Playlist Name" -s discogs -m auto -f all -o
 
-# Spotify als primaire bron, dry-run
+# Spotify as primary source, dry run
 .venv/bin/python3 main.py -p House -s spotify -m dry
 
-# Alleen album en jaar bijwerken, interactief
+# Update only album and year, interactive
 .venv/bin/python3 main.py -p 5 -f "1,2"
 ```
 
-### Stap voor stap (interactief)
+### Step by step (interactive)
 
-**1. Kies een playlist**
+**1. Choose a playlist**
 
 ```
-Beschikbare playlists:
+Available playlists:
    1   House (976)
    2   Hip Hop (349)
    3   Disco (178)
    ...
-Kies playlist (nummer): 2
+Choose playlist (number) [1]: 2
 ```
 
-**2. Kies een metadatabron**
+**2. Choose a metadata source**
 
-| Bron | Sterk in |
+| Source | Strong at |
 |---|---|
-| Discogs | Vinylcollecties, uitgebreide genre/stijl-tags, labelinformatie |
-| Spotify | Populaire releases, brede artiestcoverage |
+| Discogs | Vinyl collections, detailed genre/style tags, label information |
+| Spotify | Popular releases, broad artist coverage |
 
-Als de primaire bron niets vindt, wordt automatisch de andere bron als fallback geprobeerd.
+If the primary source finds nothing, the other source is automatically tried as a fallback.
 
-**3. Kies een modus**
+**3. Choose a mode**
 
-| Modus | Gedrag |
+| Mode | Behavior |
 |---|---|
-| Interactief | Toon kandidaten per track, kies zelf |
-| Automatisch | Neem de beste match direct over |
-| Dry-run | Toon wat er zou worden aangepast, schrijft niets |
+| Interactive | Show candidates per track, choose yourself |
+| Automatic | Pick the best match directly |
+| Dry run | Show what would be changed, writes nothing |
 
-**4. Bestaande metadata overschrijven?**
+**4. Overwrite existing metadata?**
 
-- **Nee** (standaard): vul alleen lege velden in
-- **Ja**: overschrijf ook al-ingevulde velden
+- **No** (default): fill in only empty fields
+- **Yes**: overwrite already-filled fields as well
 
-### Interactieve modus
+### Interactive mode
 
-Per track zie je de gevonden releases:
+Per track you see the found releases:
 
 ```
 Track 14/47: "Get-A-Way" — Maxx
+Current: album: Get-A-Way · year: 1993
 
   1  ★ Get-A-Way (1993) · Blow Up · Electronic, Euro House
   2    Get-A-Way (1993) · Blow Up · Electronic, Eurodance
   3    Get-A-Way (1994) · Pulse-8 Records · Electronic, Euro House
 
-Keuze (1/2/3 / s=skip / q=quit): 1
-✓ Bijgewerkt: album, jaar, genre, label, opmerkingen, artwork
+Choice (1/2/3 / s=skip / q=quit): 1
+✓ Updated: album, year, genre, label, comments, artwork
 ```
 
-### URL-pinning
+### URL pinning
 
-Als een track een Discogs- of Spotify-URL in de opmerkingen heeft, wordt die direct gebruikt zonder te zoeken:
+If a track has a Discogs or Spotify URL in its comments, that release is used directly without searching:
 
 ```
 # Discogs release:  https://www.discogs.com/release/12345
@@ -152,68 +155,69 @@ Als een track een Discogs- of Spotify-URL in de opmerkingen heeft, wordt die dir
 # Spotify track:    https://open.spotify.com/track/4iV5W9...
 ```
 
-Bij een gepinde URL wordt altijd de bijbehorende client gebruikt, ongeacht de geselecteerde `--source`.
+When a URL is pinned, the corresponding client is always used regardless of the selected `--source`.
 
-### Geen match gevonden
+### No match found
 
-- **Overwrite = Nee**: track wordt overgeslagen
-- **Overwrite = Ja**: genre, label (groepering) en opmerkingen worden leeggemaakt
+- **Overwrite = No**: track is skipped
+- **Overwrite = Yes**: genre, label (grouping), and comments are cleared
 
-## Weggeschreven velden
+## Written fields
 
-| Music.app-veld | Bron | Bestandstag | Opmerking |
+| Music.app field | Source | File tag | Note |
 |---|---|---|---|
-| Album | Release-titel | — | |
-| Jaar | Jaar van release | — | |
-| Genre | Genres + styles (Discogs) / artiestgenres (Spotify) | — | |
-| Groepering | Label | MP3: `TPUB`, FLAC: `ORGANIZATION` | |
-| Opmerkingen | Release-URL (Discogs of Spotify) | — | |
-| Artwork | Hoes | MP3/M4A/FLAC | Music.app wordt na schrijven via `refresh` bijgewerkt |
-| Tracknummer | Positie op het album (X/Y) | — | Alleen Spotify |
+| Album | Release title | — | |
+| Year | Release year | — | |
+| Genre | Genres + styles (Discogs) / artist genres (Spotify) | — | |
+| Grouping | Label | MP3: `TPUB`, FLAC: `ORGANIZATION` | |
+| Comments | Release URL (Discogs or Spotify) | — | |
+| Artwork | Cover art | MP3/M4A/FLAC | Music.app is refreshed via `refresh` after writing |
+| Track number | Position on album (X/Y) | — | Spotify only |
 
-Het **Label**-veld wordt zowel in Music.app (Groepering) als direct in het audiobestand opgeslagen als `TPUB`-tag, zodat Rekordbox het leest als Label.
+The **Label** field is written both to Music.app (Grouping) and directly into the audio file as a `TPUB` tag, so Rekordbox reads it as Label.
 
-## Logbestand
+## Log file
 
-Na elke sessie wordt een JSON-logbestand aangemaakt in de `logs/`-map (`logs/enricher_DATUM_TIJD.log.json`) met per track de status en de doorgevoerde wijzigingen. Handig als je iets ongedaan wilt maken. De map wordt automatisch aangemaakt en is uitgesloten van versiebeheer.
+After each session a JSON log file is created in the `logs/` folder (`logs/enricher_DATE_TIME.log.json`) with the status and changes applied per track. Useful if you want to undo something. The folder is created automatically and excluded from version control.
 
-## Zoekstrategie
+## Search strategy
 
-De zoekfunctie probeert automatisch meerdere varianten als een eerste zoekopdracht niets oplevert. Strategieën worden één voor één geprobeerd; bij de eerste met resultaten wordt gestopt.
+The search function automatically tries multiple variants when an initial query returns no results. Strategies are tried one by one; the first with results wins.
 
-**Titelbewerking:**
-- Versie-suffixen worden gestript: `(Original Mix)`, `(Extended)`, `(Radio Edit)`, `(Bart Claessen Remix)`, etc.
-- De laatste haakjesgroep wordt als extra fallback afgekapt, ook als die niet als standaard suffix wordt herkend (bijv. `(M&S Extended Vocal)`)
-- Eerste 2 woorden uit de haakjes worden als extra zoekterm meegenomen (bijv. `Bart Claessen` uit `(Bart Claessen Remix)`)
-- Editor/mixer-naam wordt als artiest geprobeerd (bijv. `Underdog` uit `(Underdog Edit)`)
+**Title processing:**
+- Version suffixes are stripped: `(Original Mix)`, `(Extended)`, `(Radio Edit)`, `(Bart Claessen Remix)`, etc.
+- The last parenthesized group is dropped as an extra fallback, even if not recognized as a standard suffix (e.g. `(M&S Extended Vocal)`)
+- The first 2 words from parentheses are used as an extra search term (e.g. `Bart Claessen` from `(Bart Claessen Remix)`)
+- Editor/mixer name is tried as the artist (e.g. `Underdog` from `(Underdog Edit)`)
 
-**Artiestnormalisatie:**
-- Koppeltekens en underscores worden vervangen door spaties
-- `feat.` / `ft.` / `featuring` / `presents` wordt gestript
-- Komma-collaborators worden afgekapt (bijv. `Orbital` uit `Orbital, Penelope Isles`)
-- Leidende prefixen `The`, `DJ`, `MC` worden gestript
-- Als laatste fallback wordt het eerste woord van de artiestsnaam gebruikt
+**Artist normalization:**
+- Hyphens and underscores are replaced by spaces
+- `feat.` / `ft.` / `featuring` / `presents` are stripped
+- Comma-collaborators are dropped (e.g. `Orbital` from `Orbital, Penelope Isles`)
+- Leading prefixes `The`, `DJ`, `MC` are stripped
+- As a last resort, only the first word of the artist name is used
 
-**Fallback naar andere bron:** als de gekozen bron (Discogs of Spotify) niets vindt, wordt automatisch de andere bron geprobeerd.
+**Fallback to other source:** if the chosen source (Discogs or Spotify) finds nothing, the other source is tried automatically.
 
-## Projectstructuur
+## Project structure
 
 ```
 wax-tagger/
-├── main.py              # Startpunt + CLI-flow
-├── config.py            # Credentials en instellingen
-├── models.py            # Gemeenschappelijk Release-model (Discogs + Spotify)
-├── utils.py             # Gedeelde hulpfuncties: artist_match, title_match
+├── main.py              # Entry point + CLI flow
+├── config.py            # Credentials and settings
+├── models.py            # Shared Release model (Discogs + Spotify)
+├── utils.py             # Shared helpers: artist_match, title_match
 ├── requirements.txt
-├── logs/                # Sessielogbestanden (automatisch aangemaakt, niet in git)
-├── .env                 # Lokale credentials (niet in git)
-├── .oauth_tokens        # Discogs access token (automatisch aangemaakt, niet in git)
+├── docs/                # Documentation assets (screenshots)
+├── logs/                # Session log files (auto-created, not in git)
+├── .env                 # Local credentials (not in git)
+├── .oauth_tokens        # Discogs access token (auto-created, not in git)
 ├── itunes/
-│   ├── bridge.py        # AppleScript-communicatie met Music.app
-│   └── models.py        # Track-dataclass
+│   ├── bridge.py        # AppleScript communication with Music.app
+│   └── models.py        # Track dataclass
 ├── discogs/
-│   ├── client.py        # Discogs API-wrapper (OAuth, zoeken, artwork)
-│   └── models.py        # Re-export van Release als DiscogsRelease
+│   ├── client.py        # Discogs API wrapper (OAuth, search, artwork)
+│   └── models.py        # Re-export of Release as DiscogsRelease
 └── spotify/
-    └── client.py        # Spotify API-wrapper (client credentials, zoeken, artwork)
+    └── client.py        # Spotify API wrapper (client credentials, search, artwork)
 ```

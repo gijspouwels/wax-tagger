@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-WaxTagger — verrijkt iTunes/Music.app tracks met Discogs-metadata.
+WaxTagger — enriches iTunes/Music.app tracks with Discogs metadata.
 """
 
 import sys
@@ -27,59 +27,59 @@ from utils import title_match
 
 console = Console()
 
-FIELDS = ["album", "jaar", "genre", "label", "artwork", "tracknr"]
+FIELDS = ["album", "year", "genre", "label", "artwork", "tracknr"]
 
 
 # ─── CLI-argumenten ────────────────────────────────────────────────────────────
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="WaxTagger — verrijk iTunes-tracks met Discogs-metadata.",
+        description="WaxTagger — enrich iTunes tracks with Discogs metadata.",
         formatter_class=argparse.RawTextHelpFormatter,
     )
     parser.add_argument(
         "-p", "--playlist",
-        metavar="NAAM_OF_NR",
-        help="Playlist naam of nummer (bijv. 'House' of '5')",
+        metavar="NAME_OR_NR",
+        help="Playlist name or number (e.g. 'House' or '5')",
     )
     parser.add_argument(
         "-f", "--fields",
-        metavar="VELDEN",
+        metavar="FIELDS",
         help=(
-            "Te verrijken velden, kommagescheiden nummers of namen.\n"
-            f"Opties: {', '.join(f'{i+1}={v}' for i, v in enumerate(FIELDS))}\n"
-            "Gebruik 'all' of 'alle' voor alle velden (standaard)"
+            "Fields to enrich, comma-separated numbers or names.\n"
+            f"Options: {', '.join(f'{i+1}={v}' for i, v in enumerate(FIELDS))}\n"
+            "Use 'all' for all fields (default)"
         ),
     )
     parser.add_argument(
         "-m", "--mode",
         choices=["interactive", "auto", "dry"],
-        metavar="MODUS",
-        help="interactive, auto of dry (standaard: interactive)",
+        metavar="MODE",
+        help="interactive, auto or dry (default: interactive)",
     )
     parser.add_argument(
         "-o", "--overwrite",
         action="store_true",
         default=False,
-        help="Bestaande metadata overschrijven",
+        help="Overwrite existing metadata",
     )
     parser.add_argument(
         "-s", "--source",
         choices=["discogs", "spotify"],
-        metavar="BRON",
-        help="Primaire metadatabron: discogs (standaard) of spotify",
+        metavar="SOURCE",
+        help="Primary metadata source: discogs (default) or spotify",
     )
     parser.add_argument(
         "--ignore-pinned",
         action="store_true",
         default=False,
-        help="Negeer gepinde URLs in opmerkingen en zoek opnieuw",
+        help="Ignore pinned URLs in comments and search instead",
     )
     parser.add_argument(
         "--clear-empty",
         action="store_true",
         default=False,
-        help="Maak velden leeg als het zoekresultaat daar geen waarde voor heeft (bijv. geen genre)",
+        help="Clear fields when the search result has no value for them (e.g. no genre)",
     )
     return parser.parse_args()
 
@@ -91,19 +91,19 @@ def _resolve_playlist_name(arg: str) -> str:
         idx = int(arg) - 1
         if 0 <= idx < len(playlists):
             return playlists[idx]["name"]
-        console.print(f"[red]Playlist nummer {arg} bestaat niet (max: {len(playlists)}).[/red]")
+        console.print(f"[red]Playlist number {arg} does not exist (max: {len(playlists)}).[/red]")
         sys.exit(1)
     except ValueError:
         names = [pl["name"] for pl in playlists]
         if arg in names:
             return arg
-        console.print(f"[red]Playlist '{arg}' niet gevonden.[/red]")
+        console.print(f"[red]Playlist '{arg}' not found.[/red]")
         sys.exit(1)
 
 
 def _resolve_fields(arg: str) -> set[str]:
     """Zet een CLI-argument om naar een set veldnamen."""
-    if arg.strip().lower() in ("", "alle", "all"):
+    if arg.strip().lower() in ("", "all"):
         return set(FIELDS)
     chosen = set()
     for part in arg.split(","):
@@ -154,7 +154,7 @@ class ClientRegistry:
 def header():
     console.print(Panel.fit(
         "[bold cyan]WaxTagger[/bold cyan]\n"
-        "[dim]Verrijk je iTunes/Music library via Discogs[/dim]",
+        "[dim]Enrich your iTunes/Music library via Discogs[/dim]",
         border_style="cyan",
     ))
     console.print()
@@ -162,16 +162,16 @@ def header():
 
 def pick_playlist() -> str:
     """Toon playlistkeuze en geef de gekozen naam terug."""
-    console.print("[bold]Beschikbare playlists:[/bold]")
+    console.print("[bold]Available playlists:[/bold]")
     playlists = get_playlists()
 
     if not playlists:
-        console.print("[red]Geen playlists gevonden in Music.app.[/red]")
+        console.print("[red]No playlists found in Music.app.[/red]")
         sys.exit(1)
 
     table = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
     table.add_column("Nr", style="dim", width=4)
-    table.add_column("Naam")
+    table.add_column("Name")
     table.add_column("Tracks", justify="right", style="dim")
 
     for i, pl in enumerate(playlists, 1):
@@ -180,32 +180,32 @@ def pick_playlist() -> str:
     console.print(table)
 
     while True:
-        raw = Prompt.ask("Kies playlist (nummer)")
+        raw = Prompt.ask("Choose playlist (number)")
         try:
             idx = int(raw) - 1
             if 0 <= idx < len(playlists):
                 return playlists[idx]["name"]
         except ValueError:
             pass
-        console.print("[red]Ongeldige keuze.[/red]")
+        console.print("[red]Invalid choice.[/red]")
 
 
 def pick_fields() -> set[str]:
     """Laat de gebruiker kiezen welke velden verrijkt worden."""
-    console.print("\n[bold]Welke velden wil je verrijken?[/bold]")
-    console.print("[dim](druk Enter voor alle velden, of geef nummers gescheiden door komma's)[/dim]\n")
+    console.print("\n[bold]Which fields do you want to enrich?[/bold]")
+    console.print("[dim](press Enter for all fields, or provide numbers separated by commas)[/dim]\n")
 
     table = Table(box=box.SIMPLE, show_header=False, padding=(0, 2))
     table.add_column("Nr", style="dim", width=4)
-    table.add_column("Veld")
+    table.add_column("Field")
 
     for i, f in enumerate(FIELDS, 1):
         table.add_row(str(i), f.capitalize())
 
     console.print(table)
 
-    raw = Prompt.ask("Velden", default="alle")
-    if raw.strip().lower() in ("", "alle", "all"):
+    raw = Prompt.ask("Fields", default="all")
+    if raw.strip().lower() in ("", "all"):
         return set(FIELDS)
 
     chosen = set()
@@ -224,28 +224,28 @@ def pick_fields() -> set[str]:
 
 def pick_mode() -> str:
     """Kies interactieve of automatische modus."""
-    console.print("\n[bold]Modus:[/bold]")
-    console.print("  [cyan]1[/cyan]  Interactief  — bevestig elke match handmatig")
-    console.print("  [cyan]2[/cyan]  Automatisch  — neem beste match direct over")
-    console.print("  [cyan]3[/cyan]  Dry-run      — toon wat er zou worden gewijzigd (schrijft niets)")
-    raw = Prompt.ask("Keuze", default="1")
+    console.print("\n[bold]Mode:[/bold]")
+    console.print("  [cyan]1[/cyan]  Interactive  — confirm each match manually")
+    console.print("  [cyan]2[/cyan]  Automatic    — pick best match directly")
+    console.print("  [cyan]3[/cyan]  Dry run      — show what would be changed (writes nothing)")
+    raw = Prompt.ask("Choice", default="1")
     return {"1": "interactive", "2": "auto", "3": "dry"}.get(raw.strip(), "interactive")
 
 
 def pick_overwrite() -> bool:
     """Vraag of bestaande (niet-lege) velden overschreven mogen worden."""
     return Confirm.ask(
-        "\nBestaande metadata overschrijven?",
+        "\nOverwrite existing metadata?",
         default=False,
     )
 
 
 def pick_source() -> str:
     """Kies de primaire metadatabron."""
-    console.print("\n[bold]Metadatabron:[/bold]")
-    console.print("  [cyan]1[/cyan]  Discogs  — vinylcollecties, uitgebreide genre/stijl-tags")
-    console.print("  [cyan]2[/cyan]  Spotify  — populaire releases, brede artiestcoverage")
-    raw = Prompt.ask("Keuze", default="1")
+    console.print("\n[bold]Metadata source:[/bold]")
+    console.print("  [cyan]1[/cyan]  Discogs  — vinyl collections, detailed genre/style tags")
+    console.print("  [cyan]2[/cyan]  Spotify  — popular releases, broad artist coverage")
+    raw = Prompt.ask("Choice", default="1")
     return {"1": "discogs", "2": "spotify"}.get(raw.strip(), "discogs")
 
 
@@ -258,13 +258,13 @@ def show_track_header(track: Track, index: int, total: int):
     if track.album:
         parts.append(f"album: {track.album}")
     if track.year:
-        parts.append(f"jaar: {track.year}")
+        parts.append(f"year: {track.year}")
     if track.genre:
         parts.append(f"genre: {track.genre}")
     if track.grouping:
         parts.append(f"label: {track.grouping}")
     if parts:
-        console.print(f"[dim]Huidig: {' · '.join(parts)}[/dim]")
+        console.print(f"[dim]Current: {' · '.join(parts)}[/dim]")
     console.print()
 
 
@@ -288,7 +288,7 @@ def prompt_choice(results: list[Release]) -> Optional[Release]:
     """
     options = "/".join(str(i) for i in range(1, len(results) + 1))
     raw = Prompt.ask(
-        f"Keuze ([cyan]{options}[/cyan] / [yellow]s[/yellow]=skip / [red]q[/red]=quit)",
+        f"Choice ([cyan]{options}[/cyan] / [yellow]s[/yellow]=skip / [red]q[/red]=quit)",
         default="1",
     )
     raw = raw.strip().lower()
@@ -337,19 +337,19 @@ def _clear_discogs_fields(track: Track, fields: set[str], mode: str, log: list[d
     """Maak Discogs-velden leeg wanneer er geen match gevonden is en overwrite=True."""
     cleared = {}
     if "genre" in fields and track.genre:
-        cleared["genre"] = {"van": track.genre, "naar": ""}
+        cleared["genre"] = {"from": track.genre, "to": ""}
     if "label" in fields and track.grouping:
-        cleared["label"] = {"van": track.grouping, "naar": ""}
+        cleared["label"] = {"from": track.grouping, "to": ""}
     if track.comment:
-        cleared["opmerkingen"] = {"van": track.comment, "naar": ""}
+        cleared["comments"] = {"from": track.comment, "to": ""}
 
     if not cleared:
-        console.print("  [dim]Niets gevonden en niets te wissen — overgeslagen.[/dim]\n")
+        console.print("  [dim]Nothing found and nothing to clear — skipped.[/dim]\n")
         log.append({"track": str(track), "status": "not_found"})
         return
 
     prefix = "[dim][dry-run][/dim] " if mode == "dry" else ""
-    console.print(f"  {prefix}[yellow]Niet gevonden — velden gewist: {', '.join(cleared.keys())}[/yellow]\n")
+    console.print(f"  {prefix}[yellow]Not found — fields cleared: {', '.join(cleared.keys())}[/yellow]\n")
 
     if mode != "dry":
         from itunes.bridge import update_track_metadata
@@ -357,7 +357,7 @@ def _clear_discogs_fields(track: Track, fields: set[str], mode: str, log: list[d
             track,
             new_genre="" if "genre" in cleared else None,
             new_grouping="" if "label" in cleared else None,
-            new_comment="" if "opmerkingen" in cleared else None,
+            new_comment="" if "comments" in cleared else None,
         )
 
     log.append({"track": str(track), "status": "not_found_cleared", "changes": cleared})
@@ -385,11 +385,11 @@ def enrich_track(
         pin_platform, pin_type, pin_id = pinned
         client = registry.get(pin_platform)
         label_platform = pin_platform.capitalize()
-        console.print(f"  [dim]{label_platform}-URL gevonden in opmerking — zoeken overgeslagen.[/dim]")
+        console.print(f"  [dim]{label_platform} URL found in comments — skipping search.[/dim]")
         details = client.get_details_from_pinned(pin_type, pin_id)
         if not details:
-            console.print(f"  [red]Release niet gevonden via {label_platform}-URL — overgeslagen.[/red]\n")
-            log.append({"track": str(track), "status": "error", "message": f"release niet gevonden via {pin_platform} opmerking-URL"})
+            console.print(f"  [red]Release not found via {label_platform} URL — skipped.[/red]\n")
+            log.append({"track": str(track), "status": "error", "message": f"release not found via {pin_platform} comment URL"})
             return False
     else:
         details = _search_with_fallback(track, registry, primary_source, fields, mode, overwrite, log)
@@ -409,7 +409,7 @@ def enrich_track(
     if "album" in fields and (overwrite or not track.album):
         new_album = details.title
 
-    if "jaar" in fields and (overwrite or not track.year):
+    if "year" in fields and (overwrite or not track.year):
         new_year = details.year
 
     if "genre" in fields and (overwrite or not track.genre):
@@ -440,7 +440,7 @@ def enrich_track(
 
     # Niets te doen?
     if not any([new_album, new_year, new_genre is not None, new_grouping is not None, new_comment, new_track_number, artwork_path]):
-        console.print("  [dim]Niets gewijzigd.[/dim]\n")
+        console.print("  [dim]Nothing changed.[/dim]\n")
         log.append({"track": str(track), "status": "no_changes"})
         return False
 
@@ -460,25 +460,25 @@ def enrich_track(
     # Log entry
     changes = {}
     if new_album:
-        changes["album"] = {"van": track.album, "naar": new_album}
+        changes["album"] = {"from": track.album, "to": new_album}
     if new_year:
-        changes["jaar"] = {"van": track.year, "naar": new_year}
+        changes["year"] = {"from": track.year, "to": new_year}
     if new_genre is not None:
-        changes["genre"] = {"van": track.genre, "naar": new_genre or "(leeg)"}
+        changes["genre"] = {"from": track.genre, "to": new_genre or "(empty)"}
     if new_grouping is not None:
-        changes["label"] = {"van": track.grouping, "naar": new_grouping or "(leeg)"}
+        changes["label"] = {"from": track.grouping, "to": new_grouping or "(empty)"}
     if new_comment:
-        changes["opmerkingen"] = {"van": track.comment, "naar": new_comment}
+        changes["comments"] = {"from": track.comment, "to": new_comment}
     if new_track_number is not None:
-        changes["tracknr"] = {"van": track.track_number, "naar": f"{new_track_number}/{new_track_count}"}
+        changes["tracknr"] = {"from": track.track_number, "to": f"{new_track_number}/{new_track_count}"}
     if artwork_path:
-        changes["artwork"] = "bijgewerkt"
+        changes["artwork"] = "updated"
 
     status = "dry_run" if mode == "dry" else "updated"
     log.append({"track": str(track), "status": status, "changes": changes})
 
     prefix = "[dim][dry-run][/dim] " if mode == "dry" else ""
-    console.print(f"  {prefix}[green]✓[/green] Bijgewerkt: {', '.join(changes.keys())}\n")
+    console.print(f"  {prefix}[green]✓[/green] Updated: {', '.join(changes.keys())}\n")
     return True
 
 
@@ -507,14 +507,14 @@ def _search_with_fallback(
                 if overwrite:
                     _clear_discogs_fields(track, fields, mode, log)
                 else:
-                    console.print(f"  [dim]Niets gevonden op {primary_source.capitalize()} of {fallback_source.capitalize()} — overgeslagen.[/dim]\n")
+                    console.print(f"  [dim]Nothing found on {primary_source.capitalize()} or {fallback_source.capitalize()} — skipped.[/dim]\n")
                     log.append({"track": str(track), "status": "not_found"})
                 return None
-            console.print(f"  [dim]Niets gevonden op {source.capitalize()} — probeer {fallback_source.capitalize()}...[/dim]")
+            console.print(f"  [dim]Nothing found on {source.capitalize()} — trying {fallback_source.capitalize()}...[/dim]")
             continue
 
         if is_fallback:
-            console.print(f"  [dim]Gevonden via fallback ({source.capitalize()}).[/dim]")
+            console.print(f"  [dim]Found via fallback ({source.capitalize()}).[/dim]")
 
         if mode == "interactive":
             show_results(results)
@@ -540,10 +540,10 @@ def _search_with_fallback(
                 if earliest != release_id:
                     earliest_details = discogs_client.get_release_details(earliest)
                     if earliest_details and title_match(track.title, earliest_details.title):
-                        console.print(f"  [dim]Eerdere persing gevonden via master — release #{earliest} gebruikt.[/dim]")
+                        console.print(f"  [dim]Earlier pressing found via master — using release #{earliest}.[/dim]")
                         details = earliest_details
                     else:
-                        console.print(f"  [dim]Eerdere persing (#{earliest}) heeft andere titel — oorspronkelijke release behouden.[/dim]")
+                        console.print(f"  [dim]Earlier pressing (#{earliest}) has a different title — keeping original release.[/dim]")
             return details
         else:
             details = client.get_release_details(chosen.release_id) or chosen
@@ -562,7 +562,7 @@ def main():
     header()
 
     if not check_music_running():
-        console.print("[red]Music.app is niet actief. Start Music.app en probeer opnieuw.[/red]")
+        console.print("[red]Music.app is not running. Start Music.app and try again.[/red]")
         sys.exit(1)
 
     playlist_name  = _resolve_playlist_name(args.playlist) if args.playlist else pick_playlist()
@@ -574,19 +574,19 @@ def main():
     if source == "discogs":
         if not config.DISCOGS_CONSUMER_KEY or not config.DISCOGS_CONSUMER_SECRET:
             console.print(
-                "[red]Discogs consumer key/secret niet ingesteld![/red]\n"
-                "Vul [bold]DISCOGS_CONSUMER_KEY[/bold] en [bold]DISCOGS_CONSUMER_SECRET[/bold] "
-                "in [bold].env[/bold] of als omgevingsvariabelen.\n\n"
-                "Maak een app aan op: https://www.discogs.com/settings/developers"
+                "[red]Discogs consumer key/secret not set![/red]\n"
+                "Add [bold]DISCOGS_CONSUMER_KEY[/bold] and [bold]DISCOGS_CONSUMER_SECRET[/bold] "
+                "to [bold].env[/bold] or as environment variables.\n\n"
+                "Create an app at: https://www.discogs.com/settings/developers"
             )
             sys.exit(1)
     elif source == "spotify":
         if not config.SPOTIFY_CLIENT_ID or not config.SPOTIFY_CLIENT_SECRET:
             console.print(
-                "[red]Spotify Client ID/Secret niet ingesteld![/red]\n"
-                "Vul [bold]SPOTIFY_CLIENT_ID[/bold] en [bold]SPOTIFY_CLIENT_SECRET[/bold] "
-                "in [bold].env[/bold] of als omgevingsvariabelen.\n\n"
-                "Maak een app aan op: https://developer.spotify.com/dashboard"
+                "[red]Spotify Client ID/Secret not set![/red]\n"
+                "Add [bold]SPOTIFY_CLIENT_ID[/bold] and [bold]SPOTIFY_CLIENT_SECRET[/bold] "
+                "to [bold].env[/bold] or as environment variables.\n\n"
+                "Create an app at: https://developer.spotify.com/dashboard"
             )
             sys.exit(1)
 
@@ -597,10 +597,10 @@ def main():
     else:
         overwrite = pick_overwrite()
 
-    console.print(f"\n[dim]Tracks laden uit '{playlist_name}'...[/dim]")
+    console.print(f"\n[dim]Loading tracks from '{playlist_name}'...[/dim]")
     tracks = get_tracks_from_playlist(playlist_name)
     total = len(tracks)
-    console.print(f"[dim]{total} tracks gevonden.[/dim]\n")
+    console.print(f"[dim]{total} tracks found.[/dim]\n")
 
     registry = ClientRegistry()
     log = []
@@ -613,13 +613,13 @@ def main():
                 if enrich_track(track, registry, source, fields, mode, overwrite, args.ignore_pinned, args.clear_empty, log):
                     updated += 1
             except KeyboardInterrupt:
-                console.print("\n[yellow]Onderbroken door gebruiker.[/yellow]")
+                console.print("\n[yellow]Interrupted by user.[/yellow]")
                 break
             except SystemExit:
-                console.print("\n[yellow]Gestopt op verzoek.[/yellow]")
+                console.print("\n[yellow]Stopped on request.[/yellow]")
                 break
             except Exception as e:
-                console.print(f"  [red]Fout: {e}[/red]\n")
+                console.print(f"  [red]Error: {e}[/red]\n")
                 log.append({"track": str(track), "status": "error", "message": str(e)})
 
     finally:
@@ -631,22 +631,22 @@ def main():
 
         console.rule()
         parts = [
-            f"[green]{updated}[/green] bijgewerkt",
-            f"[yellow]{skipped}[/yellow] overgeslagen",
+            f"[green]{updated}[/green] updated",
+            f"[yellow]{skipped}[/yellow] skipped",
         ]
         if not_found:
-            parts.append(f"[dim]{not_found} niet gevonden[/dim]")
+            parts.append(f"[dim]{not_found} not found[/dim]")
         if cleared:
-            parts.append(f"[dim]{cleared} niet gevonden (velden gewist)[/dim]")
+            parts.append(f"[dim]{cleared} not found (fields cleared)[/dim]")
         if errors:
-            parts.append(f"[red]{errors} fouten[/red]")
-        console.print(f"\n[bold]Klaar![/bold] " + " · ".join(parts))
+            parts.append(f"[red]{errors} errors[/red]")
+        console.print(f"\n[bold]Done![/bold] " + " · ".join(parts))
 
         os.makedirs(config.LOG_DIR, exist_ok=True)
         log_path = os.path.join(config.LOG_DIR, f"enricher_{datetime.datetime.now().strftime('%Y-%m-%d_%H%M')}.log.json")
         with open(log_path, "w", encoding="utf-8") as f:
             json.dump(log, f, ensure_ascii=False, indent=2)
-        console.print(f"[dim]Logbestand: {log_path}[/dim]\n")
+        console.print(f"[dim]Log file: {log_path}[/dim]\n")
 
 
 if __name__ == "__main__":

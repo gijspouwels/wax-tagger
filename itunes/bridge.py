@@ -22,7 +22,7 @@ def _run_applescript(script: str) -> str:
         text=True,
     )
     if result.returncode != 0:
-        raise RuntimeError(f"AppleScript fout: {result.stderr.strip()}")
+        raise RuntimeError(f"AppleScript error: {result.stderr.strip()}")
     return result.stdout.strip()
 
 
@@ -259,7 +259,7 @@ def _write_file_tags(
     """
     file_path = _get_track_file_path(persistent_id)
     if not file_path or not os.path.exists(file_path):
-        raise RuntimeError(f"Bestand niet gevonden voor track {persistent_id}")
+        raise RuntimeError(f"File not found for track {persistent_id}")
 
     ext = os.path.splitext(file_path)[1].lower()
 
@@ -308,7 +308,7 @@ def _write_file_tags(
         audio.save()
 
     else:
-        raise RuntimeError(f"Niet-ondersteund bestandsformaat voor file-tags: {ext}")
+        raise RuntimeError(f"Unsupported file format for file tags: {ext}")
 
 
 def _write_file_tags_ffmpeg(
@@ -341,7 +341,7 @@ def _write_file_tags_ffmpeg(
 
         result = subprocess.run(cmd, capture_output=True, text=True)
         if result.returncode != 0:
-            raise RuntimeError(f"ffmpeg fout: {result.stderr.strip()}")
+            raise RuntimeError(f"ffmpeg error: {result.stderr.strip()}")
         shutil.move(tmp_path, file_path)
     except Exception:
         if os.path.exists(tmp_path):
