@@ -28,20 +28,30 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 ```
 
+## Credentials
+
+WaxTagger needs API credentials for Discogs and/or Spotify (both free). They are looked up in this order:
+
+1. **App settings** — `~/Library/Application Support/WaxTagger/.env`, written by the app's *Settings* screen
+2. **Project `.env`** — in the checkout, for when you run the CLI or build the app yourself
+3. Environment variables
+
+Using the app? Open **Settings**, click *Get credentials…* next to Discogs/Spotify, paste the keys and hit *Save*. On the first run without any credentials the Settings screen opens by itself. Using the CLI? Put them in a `.env` in the project folder. The app shows next to each field where its current value comes from, and a field left empty falls back to the project `.env` / environment.
+
 ## Configuring Discogs
 
 1. Go to [discogs.com/settings/developers](https://www.discogs.com/settings/developers)
 2. Click **Create an application**
 3. Fill in a name (e.g. "WaxTagger") and save
 4. Copy the **Consumer Key** and **Consumer Secret**
-5. Create a `.env` file in the project folder:
+5. Paste them in the app's Settings screen, or create a `.env` file in the project folder:
 
 ```
 DISCOGS_CONSUMER_KEY=your_consumer_key
 DISCOGS_CONSUMER_SECRET=your_consumer_secret
 ```
 
-On first run, a browser will open automatically for OAuth authorization. Enter the verifier code shown by Discogs. The access token is saved in `.oauth_tokens` and won't need to be entered again.
+Discogs also needs a one-time OAuth authorization: click *Authorize with Discogs* in Settings (the CLI does this automatically on first run). A browser opens; enter the verifier code shown by Discogs. The access token is saved in `.oauth_tokens` and won't need to be entered again.
 
 ## Configuring Spotify
 
@@ -49,7 +59,7 @@ On first run, a browser will open automatically for OAuth authorization. Enter t
 2. Log in with your Spotify account and click **Create app**
 3. Fill in a name and description; you can use `http://localhost` as the Redirect URI
 4. Open the app and go to **Settings** → copy the **Client ID** and **Client Secret**
-5. Add them to your `.env` file:
+5. Paste them in the app's Settings screen (*Test connection* verifies them), or add them to your `.env` file:
 
 ```
 SPOTIFY_CLIENT_ID=your_client_id
@@ -164,7 +174,7 @@ Without `-f`, you will be asked interactively which fields to enrich. Unspecifie
 
 ### macOS app (GUI)
 
-> The GUI is still early-stage. It covers the full batch → review → apply flow, but expect rough edges. API credentials are currently read from `.env` (see [Building the app](#building-the-app)); configuring them from inside the app is planned.
+> The GUI is still early-stage: it covers the full batch → review → apply flow and credential setup, but expect rough edges.
 
 ![Main screen](docs/gui-main.png)
 
@@ -187,7 +197,7 @@ pip install briefcase
 briefcase build macOS app        # → build/waxtagger/macos/app/WaxTagger.app
 ```
 
-The packaged app keeps its files in `~/Library/Application Support/WaxTagger/`: put your `.env` there (same format as above), and `.oauth_tokens` and `logs/` are created next to it.
+The packaged app keeps its files in `~/Library/Application Support/WaxTagger/` (`.env` from Settings, `.oauth_tokens`, `logs/`). When you build from a checkout that has a project `.env`, those credentials are used as fallback, so you don't have to enter them twice.
 
 ### Folder mode
 
@@ -263,7 +273,7 @@ wax-tagger/
 │   ├── app.py                 # Toga app: startup, toolbar
 │   ├── screens/               # GUI screens: main, progress, review, settings
 │   ├── enricher.py            # Core: batch run, matching, proposed changes, writing
-│   ├── config.py              # Credentials (.env / env vars / keychain) and paths
+│   ├── config.py              # Credentials (app settings → project .env → env) and paths
 │   ├── track.py               # Shared Track model (both library sources)
 │   ├── models.py              # Shared Release model (Discogs + Spotify)
 │   ├── utils.py               # artist_match, title_match, split_artist_title

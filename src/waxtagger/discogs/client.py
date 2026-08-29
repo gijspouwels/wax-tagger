@@ -42,7 +42,7 @@ class DiscogsClient:
         if not (config.DISCOGS_CONSUMER_KEY and config.DISCOGS_CONSUMER_SECRET):
             raise RuntimeError(
                 "Discogs credentials missing: set DISCOGS_CONSUMER_KEY/SECRET "
-                "in Settings (keyring) or in .env"
+                "in the app's Settings screen or in .env"
             )
         kwargs = dict(
             consumer_key=config.DISCOGS_CONSUMER_KEY,

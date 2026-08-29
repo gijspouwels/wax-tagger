@@ -25,7 +25,7 @@ class SpotifyClient:
         if not (config.SPOTIFY_CLIENT_ID and config.SPOTIFY_CLIENT_SECRET):
             raise RuntimeError(
                 "Spotify credentials missing: set SPOTIFY_CLIENT_ID/SECRET "
-                "in Settings (keyring) or in .env"
+                "in the app's Settings screen or in .env"
             )
         os.makedirs(config.ARTWORK_TMP_DIR, exist_ok=True)
         self._access_token: Optional[str] = None

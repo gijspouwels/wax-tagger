@@ -16,7 +16,7 @@ Vereist macOS met Music.app en een geldig `.oauth_tokens` bestand (aangemaakt na
 | Bestand | Verantwoordelijkheid |
 |---|---|
 | `main.py` | CLI-flow, argparse, ClientRegistry, per-track enrichment-loop |
-| `config.py` | Credentials (keyring → `.env` → env vars), paden. Gepackaged (geen `pyproject.toml` naast `src/`) staan `.env`, `.oauth_tokens` en `logs/` in `~/Library/Application Support/WaxTagger/` |
+| `config.py` | Credentials: App Support `.env` (geschreven door Settings) → project `.env` → env vars; `reload()`, `save_credentials()`, `credential_source()`. Gepackaged (geen `pyproject.toml` naast `src/`) staan `.oauth_tokens` en `logs/` in `~/Library/Application Support/WaxTagger/` |
 | `models.py` | Gemeenschappelijk `Release`-dataclass (Discogs + Spotify) |
 | `utils.py` | `artist_match()`, `title_match()` — zoekresultaat-filtering |
 | `discogs/client.py` | Discogs API: OAuth, zoeken (13 strategieën), release details, artwork download |
@@ -99,3 +99,5 @@ c = DiscogsClient.__new__(DiscogsClient)
 - Geen `git add .` — `.oauth_tokens` staat in `.gitignore` maar bevat echte credentials.
 - Niet de `ui/`-map uitbreiden — bewust leeg gelaten.
 - Artwork niet via AppleScript proberen te schrijven (error -10014). `refresh t` achteraf is wel OK.
+- `WaxTaggerApp.exit()` niet terugzetten naar Toga's default: de Briefcase-stub draait na `Py_Finalize` een autorelease-pool leeg die via rubicon terug in Python callt → SIGSEGV bij afsluiten. Daarom `os._exit(0)`.
+- Geen keyring: ad-hoc gesignede builds krijgen bij elke rebuild een andere handtekening, dus keychain-toegang wordt steeds opnieuw geweigerd/gevraagd.

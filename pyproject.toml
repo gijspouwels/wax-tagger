@@ -19,8 +19,6 @@ requires = [
     "python3-discogs-client>=2.3.0",
     "requests>=2.31.0",
     "mutagen>=1.47.0",
-    "keyring>=24.0.0",
-    "python-dotenv",
 ]
 
 [tool.briefcase.app.waxtagger.macOS]

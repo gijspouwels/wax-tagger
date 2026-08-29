@@ -79,6 +79,11 @@ class ClientRegistry:
             self._spotify = SpotifyClient()
         return self._spotify
 
+    def reset(self):
+        """Drop cached clients so new credentials/tokens take effect."""
+        self._discogs = None
+        self._spotify = None
+
     def get(self, source: str):
         if source == "spotify":
             return self.get_spotify()
