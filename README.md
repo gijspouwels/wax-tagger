@@ -12,6 +12,14 @@ You can use it three ways, all built on the same engine:
 
 ![WaxTagger in the terminal](docs/screenshot.png)
 
+## Download (macOS app)
+
+Grab the latest `WaxTagger-x.y.z.dmg` from [Releases](https://github.com/gijspouwels/wax-tagger/releases), open it and drag WaxTagger to Applications.
+
+The app is not notarized with Apple, so on first launch macOS says it "cannot be opened because the developer cannot be verified". Right-click (or Control-click) the app → **Open** → **Open** once; after that it opens normally. Alternatively, from Terminal: `xattr -d com.apple.quarantine /Applications/WaxTagger.app`.
+
+On first run WaxTagger asks for API credentials — see [Credentials](#credentials). It also asks permission to control Music.app when you first read a playlist.
+
 ## Requirements
 
 - macOS (Apple Music/iTunes for playlist mode; folder mode only needs the files)
