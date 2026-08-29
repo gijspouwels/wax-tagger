@@ -14,9 +14,9 @@ import requests
 import discogs_client
 from typing import Optional
 
-from models import Release as DiscogsRelease
-from utils import artist_match
-import config
+from waxtagger.models import Release as DiscogsRelease
+from waxtagger.utils import artist_match
+from waxtagger import config
 
 
 class DiscogsClient:
@@ -39,6 +39,11 @@ class DiscogsClient:
         return self._run_oauth_flow()
 
     def _make_client(self, token: Optional[str] = None, secret: Optional[str] = None) -> discogs_client.Client:
+        if not (config.DISCOGS_CONSUMER_KEY and config.DISCOGS_CONSUMER_SECRET):
+            raise RuntimeError(
+                "Discogs credentials missing: set DISCOGS_CONSUMER_KEY/SECRET "
+                "in Settings (keyring) or in .env"
+            )
         kwargs = dict(
             consumer_key=config.DISCOGS_CONSUMER_KEY,
             consumer_secret=config.DISCOGS_CONSUMER_SECRET,
@@ -72,30 +77,30 @@ class DiscogsClient:
 
         return client
 
-    def _run_oauth_flow(self) -> discogs_client.Client:
+    def _run_oauth_flow(self, verifier_callback=None) -> discogs_client.Client:
         """
-        Voer de OAuth 1.0a-flow uit:
-        1. Haal request token op
-        2. Open browser voor autorisatie
-        3. Gebruiker voert verifier in
-        4. Wissel in voor access token en sla op
+        Voer de OAuth 1.0a-flow uit.
+        verifier_callback: optionele functie die de authorize_url krijgt en
+                           de verifier-code teruggeeft (voor GUI-gebruik).
+                           Zonder callback: CLI-modus (webbrowser + input()).
         """
         client = self._make_client()
 
         # Stap 1: request token + autorisatie-URL ophalen
         request_token, request_secret, authorize_url = client.get_authorize_url()
 
-        print(f"\nOpen this URL in your browser to authorize the app:\n{authorize_url}\n")
-        webbrowser.open(authorize_url)
+        if verifier_callback:
+            verifier = verifier_callback(authorize_url)
+        else:
+            print(f"\nOpen this URL in your browser to authorize the app:\n{authorize_url}\n")
+            webbrowser.open(authorize_url)
+            verifier = input("Enter the verifier code shown by Discogs: ").strip()
 
-        # Stap 2: verifier invoeren (Discogs toont deze na goedkeuring)
-        verifier = input("Enter the verifier code shown by Discogs: ").strip()
-
-        # Stap 3: request token in fetcher herstellen en verifier inwisselen
+        # Stap 2: request token in fetcher herstellen en verifier inwisselen
         client._fetcher.store_token(request_token, request_secret)
         access_token, access_token_secret = client.get_access_token(verifier)
 
-        # Stap 4: opslaan voor volgende sessies
+        # Stap 3: opslaan voor volgende sessies
         with open(config.OAUTH_TOKEN_FILE, "w") as f:
             json.dump({
                 "access_token": access_token,
@@ -103,7 +108,6 @@ class DiscogsClient:
             }, f)
         os.chmod(config.OAUTH_TOKEN_FILE, 0o600)  # alleen eigenaar kan lezen
 
-        print(f"Authentication successful! Token saved to {config.OAUTH_TOKEN_FILE}\n")
         return client
 
     # ─── Rate limiting ─────────────────────────────────────────────────────────
@@ -136,39 +140,27 @@ class DiscogsClient:
     _BRACKET_RE = re.compile(r'[\(\[](.*?)[\)\]]')
 
     # Laatste haakjesblok afkappen (zonder geneste haakjes), ongeacht de inhoud
-    # Vangt bijv. "(M&S Extended Vocal)" in "Salsoul Nugget (If U Wanna) (M&S Extended Vocal)"
     _LAST_BRACKET_RE = re.compile(r'\s*[\(\[][^\(\[\)\]]*[\)\]]\s*$')
 
     def search(self, artist: str, title: str, max_results: int = 5) -> list[DiscogsRelease]:
         """
         Zoek op Discogs via meerdere strategieën (stopt bij de eerste met resultaten).
-        Strategieën 1–12: releasetitel + artiest-varianten.
-        Strategie 13: editor/mixer-naam uit haakjesblok als artiest (bijv. "Underdog" uit "(Underdog Edit)").
-        Fallback: tracktitel-zoekopdracht via track=-parameter, vindt compilaties
-                  waar de trackartiest verschilt van de release-artiest.
         """
         base_title  = self._VERSION_SUFFIX_RE.sub('', title).strip()
         norm_artist = re.sub(r'[-_]', ' ', artist).strip()
         no_feat     = self._FEAT_RE.sub('', norm_artist).strip()
         short_title = ' '.join(base_title.split()[:2])
 
-        # Eerste 2 woorden uit het suffix-haakjesblok (bijv. "Bart Claessen" uit "(Bart Claessen Remix)")
         bracket_match = self._BRACKET_RE.search(title)
         bracket_words = ' '.join(bracket_match.group(1).split()[:2]) if bracket_match else ''
         enriched_title = f"{base_title} {bracket_words}".strip() if bracket_words else base_title
 
-        # Laatste haakjesgroep afkappen (ongeacht inhoud) — fallback voor custom remix-namen
         title_no_last = self._LAST_BRACKET_RE.sub('', title).strip()
 
-        # Artiest-varianten: progressief agressiever strippen
-        # "Orbital, Penelope Isles" → "Orbital"
         first_artist = re.sub(r'\s*,.*$', '', no_feat).strip()
-        # "The Wildchild Experience" → "Wildchild Experience" | "DJ Krust" → "Krust"
         no_prefix    = self._ARTIST_PREFIX_RE.sub('', first_artist).strip()
-        # "The Wildchild Experience" → "Wildchild"
         first_word   = no_prefix.split()[0] if no_prefix else ''
 
-        # Editor/mixer-naam uit haakjesblok: "(Underdog Edit)" → "Underdog"
         _GENERIC_BRACKET = re.compile(
             r'^(original|extended|radio|club|dub|vocal|instrumental|acapella|album|single|clean|vip)$',
             re.IGNORECASE,
@@ -180,21 +172,21 @@ class DiscogsClient:
                 bracket_editor = raw
 
         strategies = [
-            (title,          artist),       # 1.  origineel
-            (base_title,     artist),       # 2.  basis titel
-            (base_title,     norm_artist),  # 3.  + genormaliseerde artiest
-            (base_title,     no_feat),      # 4.  + zonder feat./presents
-            (enriched_title, no_feat),      # 5.  + eerste 2 bracket-woorden (remix-naam)
-            (title_no_last,  no_feat),      # 6.  laatste haakjesgroep afgekapt + zonder feat.
-            (title_no_last,  norm_artist),  # 7.  laatste haakjesgroep afgekapt + norm. artiest
-            (base_title,     first_artist), # 8.  komma-collaborator afgekapt
-            (title_no_last,  first_artist), # 9.  laatste bracket + komma-collaborator
-            (base_title,     no_prefix),    # 10. The/DJ/MC-prefix gestript
-            (base_title,     first_word),   # 11. eerste woord van gestripte artiest
-            (short_title,    no_feat),      # 12. eerste 2 woorden + zonder feat.
+            (title,          artist),
+            (base_title,     artist),
+            (base_title,     norm_artist),
+            (base_title,     no_feat),
+            (enriched_title, no_feat),
+            (title_no_last,  no_feat),
+            (title_no_last,  norm_artist),
+            (base_title,     first_artist),
+            (title_no_last,  first_artist),
+            (base_title,     no_prefix),
+            (base_title,     first_word),
+            (short_title,    no_feat),
         ]
         if bracket_editor:
-            strategies.append((base_title, bracket_editor))  # 13. editor/mixer als artiest
+            strategies.append((base_title, bracket_editor))
 
         seen = set()
         for search_title, search_artist in strategies:
@@ -249,7 +241,6 @@ class DiscogsClient:
             release_id = result.id
             title = result.title or ""
 
-            # Discogs-zoekresultaten: "Artiest - Album"
             if " - " in title:
                 artist_part, album_part = title.split(" - ", 1)
             else:
@@ -264,7 +255,6 @@ class DiscogsClient:
             genres = list(result.genres or [])
             styles = list(result.styles or [])
 
-            # Artwork: cover_image heeft hogere resolutie dan thumb
             artwork_url = None
             if hasattr(result, "cover_image") and result.cover_image:
                 artwork_url = result.cover_image
@@ -302,15 +292,12 @@ class DiscogsClient:
     def get_earliest_release_id(self, master_id: int, fallback_id: int, current_year: Optional[int]) -> int:
         """
         Geeft het release-ID van de vroegste bekende persing via de master.
-        Geeft fallback_id terug als er geen eerdere persing gevonden wordt.
-        Scant maximaal één pagina (50 versies) om extra API-calls te beperken.
         """
         try:
             self._rate_limit()
             master = self._client.master(master_id)
             original_year = master.year
 
-            # Huidige release is al vroeg genoeg
             if not original_year or (current_year and original_year >= current_year):
                 return fallback_id
 
@@ -325,7 +312,7 @@ class DiscogsClient:
                     best_year = v_year
                     best_id = version.id
                 if best_year == original_year:
-                    break  # vroegst mogelijke jaar gevonden
+                    break
 
             return best_id
         except Exception:
@@ -344,7 +331,6 @@ class DiscogsClient:
         """
         Haal release-details op vanuit een gepinde Discogs-URL.
         url_type: "release" of "master"
-        id_str:   het numerieke ID als string
         """
         release_id = int(id_str)
         if url_type == "master":
@@ -356,8 +342,6 @@ class DiscogsClient:
     def get_release_details(self, release_id: "int | str") -> Optional[DiscogsRelease]:
         """
         Haal volledige details op van een release.
-        Geeft betere metadata (hogere-res artwork, volledige genres) dan zoekresultaten.
-        Bij een lege/foutieve response: één retry na korte pauze, daarna None.
         Resultaten worden gecached voor de duur van de run.
         """
         release_id = int(release_id)
@@ -435,7 +419,6 @@ class DiscogsClient:
         if not release.artwork_url:
             return None
 
-        # Controleer of artwork al gecached is op schijf
         for ext in (".jpg", ".png"):
             cached = os.path.join(config.ARTWORK_TMP_DIR, f"release_{release.release_id}{ext}")
             if os.path.exists(cached):
@@ -443,7 +426,6 @@ class DiscogsClient:
 
         self._rate_limit()
         try:
-            # OAuth-headers genereren via de fetcher en dan downloaden met requests
             fetcher = self._client._fetcher
             headers = {"User-Agent": config.DISCOGS_USER_AGENT}
             _, signed_headers, _ = fetcher.client.sign(

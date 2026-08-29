@@ -12,9 +12,9 @@ import base64
 import requests
 from typing import Optional
 
-from models import Release
-from utils import artist_match
-import config
+from waxtagger.models import Release
+from waxtagger.utils import artist_match
+from waxtagger import config
 
 
 class SpotifyClient:
@@ -22,6 +22,11 @@ class SpotifyClient:
     _API_BASE  = "https://api.spotify.com/v1"
 
     def __init__(self):
+        if not (config.SPOTIFY_CLIENT_ID and config.SPOTIFY_CLIENT_SECRET):
+            raise RuntimeError(
+                "Spotify credentials missing: set SPOTIFY_CLIENT_ID/SECRET "
+                "in Settings (keyring) or in .env"
+            )
         os.makedirs(config.ARTWORK_TMP_DIR, exist_ok=True)
         self._access_token: Optional[str] = None
         self._token_expires_at: float = 0.0
@@ -64,7 +69,6 @@ class SpotifyClient:
 
     # ─── Zoeken ────────────────────────────────────────────────────────────────
 
-    # Versie-suffixen strippen (zelfde patroon als Discogs)
     _VERSION_SUFFIX_RE = re.compile(
         r'\s*[\(\[](original mix|extended mix|extended|clean extended|clean|'
         r'radio edit|club mix|instrumental|acapella|dub mix|remix|edit|mix|'
@@ -76,12 +80,6 @@ class SpotifyClient:
     def search(self, artist: str, title: str, max_results: int = 5) -> list[Release]:
         """
         Zoek op Spotify via de track-endpoint.
-        Probeert meerdere query-varianten (stopt bij de eerste met resultaten):
-          1. track:"<titel>" artist:"<artiest>"    — meest specifiek
-          2. track:"<basistitel>" artist:"<artiest>" — versiesuffix gestript
-          3. "<basistitel>" artist:"<artiest>"     — titel als keyword
-          4. "<basistitel> <artiest>"              — volledig keyword (meest permissief)
-        Retourneert unieke albums (op album_id gededupliceerd) als Release-objecten.
         """
         base_title = self._VERSION_SUFFIX_RE.sub('', title).strip()
 
@@ -91,7 +89,6 @@ class SpotifyClient:
             f'"{base_title}" artist:"{artist}"',
             f'"{base_title}" "{artist}"',
         ]
-        # Dedup: sla dubbele queries over (bijv. als titel geen suffix had)
         seen_queries: set[str] = set()
 
         for q in queries:
@@ -140,7 +137,6 @@ class SpotifyClient:
     def get_release_details(self, album_id: str) -> Optional[Release]:
         """
         Haal volledige albumdetails op via de Spotify Albums API.
-        Als album.genres leeg is, worden artiestgenres gebruikt als fallback.
         """
         try:
             album = self._get(f"albums/{album_id}")
@@ -154,7 +150,6 @@ class SpotifyClient:
         """
         Haal release-details op vanuit een gepinde Spotify-URL.
         url_type: "album" of "track"
-        id_str:   het Spotify ID
         """
         if url_type == "track":
             try:
@@ -175,13 +170,10 @@ class SpotifyClient:
     def download_artwork(self, release: Release) -> Optional[str]:
         """
         Download artwork naar een tijdelijk bestand.
-        Gebruikt de 300px-variant (index [1]) als die beschikbaar is.
-        Geeft het lokale pad terug, of None bij mislukking.
         """
         if not release.artwork_url:
             return None
 
-        # Controleer schijfcache
         for ext in (".jpg", ".png"):
             cached = os.path.join(config.ARTWORK_TMP_DIR, f"spotify_{release.release_id}{ext}")
             if os.path.exists(cached):
@@ -212,7 +204,6 @@ class SpotifyClient:
             genres       = [g.title() for g in (album.get("genres") or [])]
             total_tracks = album.get("total_tracks")
 
-            # Jaar: alleen het eerste 4-cijferige deel
             release_date = album.get("release_date", "")
             year: Optional[int] = None
             if release_date:
@@ -221,16 +212,13 @@ class SpotifyClient:
                 except ValueError:
                     pass
 
-            # Artiest: gebruik eerste artist uit de lijst
             artists = album.get("artists") or []
             artist  = artists[0].get("name", "") if artists else ""
             artist_id = artists[0].get("id", "") if artists else ""
 
-            # Artwork: kies de 300px-variant; val terug op de grootste
             images     = album.get("images") or []
             artwork_url = self._pick_artwork(images)
 
-            # Genre-fallback via artiest als het album geen genres heeft
             if not genres and fetch_artist_genres and artist_id:
                 try:
                     artist_data = self._get(f"artists/{artist_id}")
@@ -258,12 +246,9 @@ class SpotifyClient:
     def _pick_artwork(images: list[dict]) -> Optional[str]:
         """
         Kies de ~300px-variant uit de Spotify image-lijst.
-        Spotify levert doorgaans 3 formaten: ~640, ~300, ~64px.
-        Valt terug op de eerste (grootste) als er geen 300px is.
         """
         if not images:
             return None
-        # Zoek de afbeelding die het dichtst bij 300px ligt
         target = 300
         best = min(images, key=lambda img: abs((img.get("width") or 0) - target))
         return best.get("url")

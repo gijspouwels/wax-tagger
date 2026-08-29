@@ -25,3 +25,8 @@ logs/
 
 # Ongebruikte stub
 ui/
+
+# Briefcase build output
+build/
+.briefcase/
+dist/

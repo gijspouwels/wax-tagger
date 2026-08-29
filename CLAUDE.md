@@ -16,14 +16,18 @@ Vereist macOS met Music.app en een geldig `.oauth_tokens` bestand (aangemaakt na
 | Bestand | Verantwoordelijkheid |
 |---|---|
 | `main.py` | CLI-flow, argparse, ClientRegistry, per-track enrichment-loop |
-| `config.py` | Credentials (via env vars), paden |
+| `config.py` | Credentials (keyring → `.env` → env vars), paden. Gepackaged (geen `pyproject.toml` naast `src/`) staan `.env`, `.oauth_tokens` en `logs/` in `~/Library/Application Support/WaxTagger/` |
 | `models.py` | Gemeenschappelijk `Release`-dataclass (Discogs + Spotify) |
 | `utils.py` | `artist_match()`, `title_match()` — zoekresultaat-filtering |
 | `discogs/client.py` | Discogs API: OAuth, zoeken (13 strategieën), release details, artwork download |
 | `discogs/models.py` | Re-export van `Release` als `DiscogsRelease` (backwards compat) |
 | `spotify/client.py` | Spotify API: client credentials, zoeken (4-query cascade), artwork download |
 | `itunes/bridge.py` | AppleScript-brug: playlists/tracks lezen, metadata + bestandstags schrijven |
-| `itunes/models.py` | `Track` dataclass |
+| `itunes/models.py` | Backwards-compat re-export van `Track` (nu in `waxtagger/track.py`) |
+| `track.py` | Gemeenschappelijk `Track`-dataclass — gebruikt door beide bronnen (Music.app + map) |
+| `folder/bridge.py` | Map-brug: audiobestanden op schijf scannen, tags lezen/schrijven via mutagen, bestanden hernoemen |
+
+> Let op: paden hierboven zijn relatief aan `src/waxtagger/` (feature/gui-herstructurering); `main.py` in de root is een dunne CLI-shim.
 
 ## Belangrijke ontwerpkeuzes
 
@@ -34,6 +38,22 @@ Vereist macOS met Music.app en een geldig `.oauth_tokens` bestand (aangemaakt na
 - **Rate limiting**: 1 seconde tussen Discogs API-calls; 2 retry-pogingen bij lege response.
 - **artist_match / title_match** (`utils.py`): zoekresultaten worden gefilterd op artiest (substring → token-overlap → SequenceMatcher ≥0.5). `title_match` voorkomt dat de vroegste-persing-lookup een remix vervangt door het origineel.
 - **tracknr-veld**: alleen geschreven wanneer de bron Spotify is (Music.app accepteert enkel integers in het track number-veld; Discogs geeft hier geen betrouwbare data).
+
+## Bronnen: Music.app-playlist of map op schijf
+
+Er zijn twee libraries om tracks uit te lezen; beide leveren dezelfde `Track`-objecten aan de enricher:
+
+- **Music.app** (`itunes/bridge.py`): leest een playlist via AppleScript, schrijft terug via AppleScript + `mutagen`. `Track.persistent_id` is gezet.
+- **Map** (`folder/bridge.py`): scant audiobestanden op schijf (MP3, M4A/AAC/MP4, FLAC, AIFF, WAV), leest/schrijft tags rechtstreeks via `mutagen`. `Track.file_path` is gezet; `Track.is_file` is `True`.
+
+De enricher kiest de schrijver op basis van `track.is_file` (`apply_changes()` in `enricher.py`). Ontbrekende titel/artiest worden bij het scannen geraden uit de bestandsnaam (`Artiest - Titel.ext`, met eventueel leidend tracknummer). Voor **beide** bronnen geldt: is de artiest leeg en bevat de titel `Artiest - Titel` (ook en/em-dash, evt. leidend tracknummer), dan splitst `Track.__post_init__` die via `utils.split_artist_title()`, zet `derived_artist_title=True`, en stelt de enricher `artist`/`title`-wijzigingen voor die worden teruggeschreven (Music.app én bestandstags).
+
+- **CLI**: `-d/--folder PATH` (i.p.v. `-p`), `--no-recursive`, `--rename [PATRoON]`.
+- **GUI**: bovenaan main_screen kies je "Folder on disk"; dan verschijnen mapkeuze + hernoem-opties.
+
+### Bestanden hernoemen (alleen mapmodus)
+
+Met een patroon als `{artist} - {title}` worden bestanden hernoemd op basis van de *verrijkte* metadata. Variabelen: `{artist} {title} {album} {year} {genre} {label} {tracknr}` (`RENAME_VARIABLES`). Leeg gebleven variabelen en de daardoor zwevende scheidingstekens worden opgeruimd; illegale tekens worden vervangen; bij naamconflict wordt ` (2)`, ` (3)`, … toegevoegd. De hernoeming gebeurt als laatste stap in `apply_changes()` (ná het schrijven van tags, omdat het pad daardoor verandert) en verschijnt als extra `filename`-`ProposedChange` in het reviewscherm.
 
 ## Zoekstrategie (`discogs/client.py`)
 

@@ -3,6 +3,7 @@ Gedeelde hulpfuncties voor WaxTagger.
 """
 
 import re
+from typing import Optional
 from difflib import SequenceMatcher
 
 # Herkent remix/edit-markers in een titel: "(The Magician Remix)", "(Henrik Schwarz Edit)" etc.
@@ -69,3 +70,20 @@ def title_match(query: str, result: str) -> bool:
         return True
 
     return bq in br or br in bq or SequenceMatcher(None, bq, br).ratio() >= 0.6
+
+
+_ARTIST_TITLE_SEP_RE = re.compile(r"\s+[-\u2013\u2014]\s+")   # ' - ', ' – ', ' — '
+_LEADING_TRACKNR_RE  = re.compile(r"^\s*\d{1,3}\s*[-._]\s*")
+
+
+def split_artist_title(text: str) -> tuple[Optional[str], Optional[str]]:
+    """
+    Split 'Artist - Title' (also en/em dash) into (artist, title).
+    A leading track number ('01 - ', '01. ') is stripped first.
+    Returns (None, cleaned_text) when there is no separator.
+    """
+    stem = _LEADING_TRACKNR_RE.sub("", text or "").strip()
+    parts = _ARTIST_TITLE_SEP_RE.split(stem, maxsplit=1)
+    if len(parts) == 2 and parts[0].strip() and parts[1].strip():
+        return parts[0].strip(), parts[1].strip()
+    return None, stem or None
