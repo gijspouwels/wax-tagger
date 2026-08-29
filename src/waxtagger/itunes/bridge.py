@@ -11,6 +11,8 @@ from mutagen.mp3 import MP3
 from mutagen.id3 import ID3, APIC, TPUB, error as ID3Error
 from mutagen.mp4 import MP4, MP4Cover
 from mutagen.flac import FLAC, Picture
+from mutagen.wave import WAVE
+from mutagen.aiff import AIFF
 from .models import Track
 
 
@@ -42,9 +44,11 @@ def get_playlists() -> list[dict]:
         set output to {}
         set userPlaylists to (every playlist whose special kind is none)
         repeat with pl in userPlaylists
-            set plName to name of pl
-            set trackCount to count of tracks of pl
-            set end of output to (plName & "|||" & trackCount)
+            try
+                set plName to name of pl
+                set trackCount to count of tracks of pl
+                set end of output to (plName & "|||" & trackCount)
+            end try
         end repeat
         set AppleScript's text item delimiters to linefeed
         set outputStr to output as string
@@ -164,6 +168,7 @@ def get_tracks_from_playlist(playlist_name: str) -> list[Track]:
 def update_track_metadata(
     track: Track,
     new_title: Optional[str] = None,
+    new_artist: Optional[str] = None,
     new_album: Optional[str] = None,
     new_year: Optional[int] = None,
     new_genre: Optional[str] = None,
@@ -179,6 +184,9 @@ def update_track_metadata(
     if new_title is not None:
         escaped = new_title.replace('"', '\\"')
         set_statements.append(f'set name of t to "{escaped}"')
+    if new_artist is not None:
+        escaped = new_artist.replace('"', '\\"')
+        set_statements.append(f'set artist of t to "{escaped}"')
     if new_album is not None:
         escaped = new_album.replace('"', '\\"')
         set_statements.append(f'set album of t to "{escaped}"')
@@ -292,6 +300,19 @@ def _write_file_tags(
             fmt = MP4Cover.FORMAT_JPEG if mime == "image/jpeg" else MP4Cover.FORMAT_PNG
             audio["covr"] = [MP4Cover(img_data, imageformat=fmt)]
         # M4A heeft geen standaard publisher-veld; sla over (Rekordbox leest dit niet)
+        audio.save()
+
+    elif ext in (".wav", ".aiff", ".aif"):
+        # WAV/AIFF dragen een ID3v2-chunk; mutagen's WAVE/AIFF wrappers exposen die als .tags
+        audio = WAVE(file_path) if ext == ".wav" else AIFF(file_path)
+        if audio.tags is None:
+            audio.add_tags()
+        if img_data is not None:
+            audio.tags.delall("APIC")
+            audio.tags.add(APIC(encoding=3, mime=mime, type=3, desc="Cover", data=img_data))
+        if publisher is not None:
+            audio.tags.delall("TPUB")
+            audio.tags.add(TPUB(encoding=3, text=publisher))
         audio.save()
 
     elif ext == ".flac":

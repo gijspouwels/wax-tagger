@@ -1,0 +1,32 @@
+[build-system]
+requires = ["briefcase"]
+
+[tool.briefcase]
+project_name = "WaxTagger"
+bundle = "com.gijspouwels"
+version = "2.0.0"
+url = "https://github.com/gijspouwels/wax-tagger"
+author = "Gijs Pouwels"
+author_email = ""
+license.text = "MIT"
+
+[tool.briefcase.app.waxtagger]
+formal_name = "WaxTagger"
+description = "Enrich your Apple Music library via Discogs and Spotify"
+sources = ["src/waxtagger"]
+requires = [
+    "toga==0.5.3",
+    "python3-discogs-client>=2.3.0",
+    "requests>=2.31.0",
+    "mutagen>=1.47.0",
+]
+
+[tool.briefcase.app.waxtagger.macOS]
+requires = ["toga-cocoa==0.5.3", "std-nslog>=1.0.0,<2"]
+
+[tool.briefcase.app.waxtagger.macOS.entitlements]
+"com.apple.security.network.client" = true
+"com.apple.security.automation.apple-events" = true
+
+[tool.briefcase.app.waxtagger.macOS.info]
+NSAppleEventsUsageDescription = "WaxTagger reads and updates tracks in Music.app."
