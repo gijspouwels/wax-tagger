@@ -36,7 +36,7 @@ USER_ENV_FILE = os.path.join(APP_SUPPORT_DIR, ".env")
 OAUTH_TOKEN_FILE = os.path.join(_PROJECT_ROOT, ".oauth_tokens")
 
 # User-agent required by the Discogs API (app name + version)
-DISCOGS_USER_AGENT = "WaxTagger/2.0"
+DISCOGS_USER_AGENT = "WaxTagger/2.0.1"
 
 # Temporary folder for artwork downloads
 ARTWORK_TMP_DIR = "/tmp/artwork"
