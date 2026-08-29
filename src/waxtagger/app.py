@@ -38,8 +38,6 @@ class WaxTaggerApp(toga.App):
             text="Settings",
             tooltip="Manage API credentials",
             shortcut=toga.Key.MOD_1 + ",",
-            group=toga.Group.APP,
-            section=1,
             icon=None,
         )
         self.commands.add(settings_cmd)

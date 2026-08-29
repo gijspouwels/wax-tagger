@@ -44,83 +44,88 @@ class SettingsScreen:
         self._spotify_status: toga.Label = None
 
     # ── Build ─────────────────────────────────────────────────────────────────
+    # Mirrors the main screen: label column (width 110) + flex input, margin 4.
 
     def _field(self, key: str, label: str, secret: bool) -> toga.Box:
         widget_cls = toga.PasswordInput if secret else toga.TextInput
         inp = widget_cls(value=config.get_credential(key), placeholder=label, style=Pack(flex=1))
         src = toga.Label(_SOURCE_LABELS[config.credential_source(key)],
-                         style=Pack(width=140, margin=(0, 0, 0, 8), font_size=11, color="#777777"))
+                         style=Pack(width=130, margin=(0, 0, 0, 8), font_size=10, color="#888888"))
         self._inputs[key] = inp
         self._source_labels[key] = src
         return toga.Box(
-            children=[toga.Label(label, style=Pack(width=120, margin=(0, 8, 0, 0))), inp, src],
+            children=[toga.Label(label, style=Pack(width=110, margin=(0, 8, 0, 0))), inp, src],
             style=Pack(direction=ROW, margin=4, align_items="center"),
         )
 
-    def _section(self, title: str, url: str, rows: list, buttons: list, status: toga.Label) -> toga.Box:
+    def _section(self, title: str, url: str, rows: list, action: toga.Button, status: toga.Label) -> toga.Box:
+        # Section title sits in the label column, like a form group header.
         header = toga.Box(
+            children=[toga.Label(title, style=Pack(font_weight="bold", flex=1))],
+            style=Pack(direction=ROW, margin=(8, 4, 0, 4)),
+        )
+        # Action row: status text left, buttons right (same shape as the main screen's footer).
+        footer = toga.Box(
             children=[
-                toga.Label(title, style=Pack(font_size=14, font_weight="bold", flex=1)),
+                status,
                 toga.Button("Get credentials…", on_press=lambda w, u=url: webbrowser.open(u),
-                            style=Pack(font_size=11)),
+                            style=Pack(margin=(0, 4, 0, 0))),
+                action,
             ],
-            style=Pack(direction=ROW, align_items="center", margin=(0, 0, 4, 0)),
+            style=Pack(direction=ROW, margin=4, align_items="center"),
         )
-        return toga.Box(
-            children=[header, *rows, toga.Box(children=buttons, style=Pack(direction=ROW)), status],
-            style=Pack(direction=COLUMN, margin=(12, 0, 4, 0)),
-        )
+        return toga.Box(children=[header, *rows, footer], style=Pack(direction=COLUMN))
 
     def build_window(self) -> toga.Window:
         children = []
 
         if self.first_run:
             children.append(toga.Label(
-                "Welcome! WaxTagger needs API credentials for at least one source.\n"
-                "Create a free app at Discogs and/or Spotify, paste the keys below and click Save.",
-                style=Pack(margin=(0, 0, 8, 0)),
+                "WaxTagger needs API credentials for at least one source. "
+                "Create a free app at Discogs and/or Spotify and paste the keys below.",
+                style=Pack(margin=(8, 4, 4, 4)),
             ))
 
-        self._discogs_status = toga.Label(self._discogs_auth_status(), style=Pack(margin=(4, 0)))
+        self._discogs_status = toga.Label(self._discogs_auth_status(), style=Pack(flex=1, font_size=10, color="#888888"))
         children.append(self._section(
             "Discogs", DISCOGS_DEV_URL,
             [self._field("DISCOGS_CONSUMER_KEY", "Consumer Key", False),
              self._field("DISCOGS_CONSUMER_SECRET", "Consumer Secret", True)],
-            [toga.Button("Authorize with Discogs", on_press=self._on_discogs_authorize, style=Pack(margin=(4, 4, 4, 0)))],
+            toga.Button("Authorize…", on_press=self._on_discogs_authorize),
             self._discogs_status,
         ))
-        children.append(toga.Divider())
 
-        self._spotify_status = toga.Label("", style=Pack(margin=(4, 0)))
+        self._spotify_status = toga.Label("", style=Pack(flex=1, font_size=10, color="#888888"))
         children.append(self._section(
             "Spotify", SPOTIFY_DEV_URL,
             [self._field("SPOTIFY_CLIENT_ID", "Client ID", False),
              self._field("SPOTIFY_CLIENT_SECRET", "Client Secret", True)],
-            [toga.Button("Test connection", on_press=self._on_spotify_test, style=Pack(margin=(4, 4, 4, 0)))],
+            toga.Button("Test connection", on_press=self._on_spotify_test),
             self._spotify_status,
         ))
-        children.append(toga.Divider())
 
-        children.append(toga.Label(
-            f"Saved to {config.USER_ENV_FILE}\n"
-            "Leave a field empty to fall back to the project .env / environment.",
-            style=Pack(font_size=11, color="#777777", margin=(8, 0)),
-        ))
+        children.append(toga.Divider(style=Pack(margin=(8, 4))))
+        home = os.path.expanduser("~")
+        shown_path = config.USER_ENV_FILE.replace(home, "~", 1)
         children.append(toga.Box(
-            children=[toga.Button("Save", on_press=self._on_save, style=Pack(margin=(8, 4, 8, 0)))],
-            style=Pack(direction=ROW),
+            children=[
+                toga.Label(f"Stored in {shown_path}. Empty fields fall back to the project .env / environment.",
+                           style=Pack(flex=1, font_size=10, color="#888888")),
+                toga.Button("Save", on_press=self._on_save),
+            ],
+            style=Pack(direction=ROW, margin=4, align_items="center"),
         ))
 
-        content = toga.Box(children=children, style=Pack(direction=COLUMN, margin=12))
-        self._window = toga.Window(title="WaxTagger Settings", size=(620, 460))
-        self._window.content = toga.ScrollContainer(content=content, horizontal=False)
+        content = toga.Box(children=children, style=Pack(direction=COLUMN, margin=8))
+        self._window = toga.Window(title="WaxTagger Settings", size=(620, 330))
+        self._window.content = content
         return self._window
 
     # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _discogs_auth_status(self) -> str:
         if os.path.exists(config.OAUTH_TOKEN_FILE):
-            return "✓ Discogs: authorized"
+            return "✓ Authorized"
         return "Discogs: not yet authorized (needed for searching)"
 
     def _refresh_source_labels(self):
@@ -186,7 +191,7 @@ class SettingsScreen:
             with open(config.OAUTH_TOKEN_FILE, "w") as f:
                 json.dump({"access_token": access_token, "access_token_secret": access_token_secret}, f)
             os.chmod(config.OAUTH_TOKEN_FILE, 0o600)
-            self._discogs_status.text = "✓ Discogs: authorized"
+            self._discogs_status.text = "✓ Authorized"
             self.app.registry.reset()
         except Exception as e:
             await self._window.dialog(toga.ErrorDialog("Authorization failed", str(e)))
@@ -204,6 +209,6 @@ class SettingsScreen:
             from waxtagger.spotify.client import SpotifyClient
             client = SpotifyClient()
             await loop.run_in_executor(None, client._ensure_token)
-            self._spotify_status.text = "✓ Spotify: connected"
+            self._spotify_status.text = "✓ Connected"
         except Exception as e:
-            self._spotify_status.text = f"✗ Spotify: {e}"
+            self._spotify_status.text = f"✗ {e}"
