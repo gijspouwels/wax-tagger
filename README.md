@@ -1,12 +1,20 @@
 # WaxTagger
 
-Enriches tracks in your Apple Music/iTunes library with metadata from [Discogs](https://www.discogs.com) or [Spotify](https://open.spotify.com): album, year, genre, label, artwork, and release URL. Works per playlist, with an interactive or automatic mode.
+Enriches your music with metadata from [Discogs](https://www.discogs.com) or [Spotify](https://open.spotify.com): album, year, genre, label, artwork, track number and release URL. Reads tracks from an Apple Music playlist **or a folder of audio files on disk**.
 
-![WaxTagger in action](docs/screenshot.png)
+You can use it three ways, all built on the same engine:
+
+| | Best for |
+|---|---|
+| **Interactive terminal (TUI)** | Going through a playlist track by track and picking the right release yourself |
+| **CLI with flags** | Scripted / unattended runs (`-p "House" -s discogs -m auto -f all`) |
+| **macOS app (GUI)** | Run a batch, then review and accept/skip per track — early stage, see below |
+
+![WaxTagger in the terminal](docs/screenshot.png)
 
 ## Requirements
 
-- macOS with Apple Music/iTunes
+- macOS (Apple Music/iTunes for playlist mode; folder mode only needs the files)
 - Python 3.11+
 - [ffmpeg](https://ffmpeg.org) (for MP3s with corrupt ID3 headers): `brew install ffmpeg`
 - A free Discogs account with a registered app (see below), and/or a Spotify Developer app
@@ -57,43 +65,15 @@ SPOTIFY_CLIENT_SECRET=your_client_secret
 
 ## Usage
 
+### Interactive terminal (TUI)
+
 ```bash
 .venv/bin/python3 main.py
 ```
 
-### CLI flags
+Without flags WaxTagger asks for everything step by step and lets you choose between candidate releases per track.
 
-All choices can also be passed as flags to skip interactive prompts:
-
-| Flag | Description | Example |
-|---|---|---|
-| `-p`, `--playlist` | Playlist name or number | `-p "House"` or `-p 5` |
-| `-s`, `--source` | Primary source: `discogs` (default) or `spotify` | `-s spotify` |
-| `-f`, `--fields` | Fields to enrich (comma-separated numbers or names), or `all` | `-f "1,2,3"` or `-f "album,year"` or `-f all` |
-| `-m`, `--mode` | Mode: `interactive`, `auto`, or `dry` | `-m auto` |
-| `-o`, `--overwrite` | Overwrite existing metadata (flag, no value) | `-o` |
-| `--ignore-pinned` | Ignore pinned URL in comments, search instead | `--ignore-pinned` |
-| `--clear-empty` | Clear fields when the search result has no value for them | `--clear-empty` |
-
-Without `-f`, you will be asked interactively which fields to enrich. Unspecified options are asked interactively.
-
-**Examples:**
-
-```bash
-# Discogs, fully automatic, all fields, no overwrite
-.venv/bin/python3 main.py -p "Playlist Name" -s discogs -m auto -f all
-
-# Discogs, all fields, including overwriting existing metadata
-.venv/bin/python3 main.py -p "Playlist Name" -s discogs -m auto -f all -o
-
-# Spotify as primary source, dry run
-.venv/bin/python3 main.py -p House -s spotify -m dry
-
-# Update only album and year, interactive
-.venv/bin/python3 main.py -p 5 -f "1,2"
-```
-
-### Step by step (interactive)
+#### Step by step
 
 **1. Choose a playlist**
 
@@ -128,7 +108,7 @@ If the primary source finds nothing, the other source is automatically tried as 
 - **No** (default): fill in only empty fields
 - **Yes**: overwrite already-filled fields as well
 
-### Interactive mode
+#### Choosing a release
 
 Per track you see the found releases:
 
@@ -143,6 +123,77 @@ Current: album: Get-A-Way · year: 1993
 Choice (1/2/3 / s=skip / q=quit): 1
 ✓ Updated: album, year, genre, label, comments, artwork
 ```
+
+### CLI flags
+
+All choices can also be passed as flags to skip interactive prompts:
+
+| Flag | Description | Example |
+|---|---|---|
+| `-p`, `--playlist` | Playlist name or number | `-p "House"` or `-p 5` |
+| `-d`, `--folder` | Read tracks from a folder on disk instead of a playlist | `-d ~/Music/Incoming` |
+| `--no-recursive` | With `--folder`: do not scan subfolders | `--no-recursive` |
+| `--rename [PATTERN]` | With `--folder`: rename files from the enriched tags (default `{artist} - {title}`) | `--rename "{tracknr} {artist} - {title}"` |
+| `-s`, `--source` | Primary source: `discogs` (default) or `spotify` | `-s spotify` |
+| `-f`, `--fields` | Fields to enrich (comma-separated numbers or names), or `all` | `-f "1,2,3"` or `-f "album,year"` or `-f all` |
+| `-m`, `--mode` | Mode: `interactive`, `auto`, or `dry` | `-m auto` |
+| `-o`, `--overwrite` | Overwrite existing metadata (flag, no value) | `-o` |
+| `--ignore-pinned` | Ignore pinned URL in comments, search instead | `--ignore-pinned` |
+| `--clear-empty` | Clear fields when the search result has no value for them | `--clear-empty` |
+
+Without `-f`, you will be asked interactively which fields to enrich. Unspecified options are asked interactively.
+
+**Examples:**
+
+```bash
+# Discogs, fully automatic, all fields, no overwrite
+.venv/bin/python3 main.py -p "Playlist Name" -s discogs -m auto -f all
+
+# Discogs, all fields, including overwriting existing metadata
+.venv/bin/python3 main.py -p "Playlist Name" -s discogs -m auto -f all -o
+
+# Spotify as primary source, dry run
+.venv/bin/python3 main.py -p House -s spotify -m dry
+
+# Update only album and year, interactive
+.venv/bin/python3 main.py -p 5 -f "1,2"
+
+# Folder on disk, Spotify, and rename files to "Artist - Title.ext"
+.venv/bin/python3 main.py -d ~/Music/Incoming -s spotify -m auto -f all --rename
+```
+
+### macOS app (GUI)
+
+> The GUI is still early-stage. It covers the full batch → review → apply flow, but expect rough edges. API credentials are currently read from `.env` (see [Building the app](#building-the-app)); configuring them from inside the app is planned.
+
+![Main screen](docs/gui-main.png)
+
+1. **Library** — a Music.app playlist, or a folder on disk (with optional file renaming, e.g. `{artist} - {title}`)
+2. **Source** — Discogs or Spotify as primary source; the other one is tried as a fallback
+3. **Fields** — which fields to enrich
+4. **Mode** — *Auto* picks the best match per track; *Dry run* only shows what would change
+5. **Options** — overwrite existing values, ignore pinned URLs, clear fields that have no value in the match
+
+![Processing](docs/gui-processing.png)
+
+![Review screen](docs/gui-review.png)
+
+The review screen lists every track with its source and the proposed changes. Toggle rows to skip them, check with *Dry Run Preview*, then *Apply*. Nothing is written before that. Tracks whose title still contains `Artist - Title` (with an empty artist field) are split automatically and the cleaned artist/title are proposed as changes too.
+
+#### Building the app
+
+```bash
+pip install briefcase
+briefcase build macOS app        # → build/waxtagger/macos/app/WaxTagger.app
+```
+
+The packaged app keeps its files in `~/Library/Application Support/WaxTagger/`: put your `.env` there (same format as above), and `.oauth_tokens` and `logs/` are created next to it.
+
+### Folder mode
+
+With `-d/--folder` (or *Folder on disk* in the GUI) WaxTagger scans MP3, M4A/AAC, FLAC, AIFF and WAV files and reads/writes their tags directly. If a file has no artist tag, artist and title are guessed from the title tag or the filename (`Artist - Title.ext`; a leading track number is ignored).
+
+Rename variables: `{artist} {title} {album} {year} {genre} {label} {tracknr}`. Empty variables and dangling separators are dropped; illegal characters are replaced; name clashes get ` (2)`, ` (3)`, …
 
 ### URL pinning
 
@@ -164,21 +215,22 @@ When a URL is pinned, the corresponding client is always used regardless of the 
 
 ## Written fields
 
-| Music.app field | Source | File tag | Note |
+| Field | Source | Music.app | File tag (folder mode) |
 |---|---|---|---|
-| Album | Release title | — | |
-| Year | Release year | — | |
-| Genre | Genres + styles (Discogs) / artist genres (Spotify) | — | |
-| Grouping | Label | MP3: `TPUB`, FLAC: `ORGANIZATION` | |
-| Comments | Release URL (Discogs or Spotify) | — | |
-| Artwork | Cover art | MP3/M4A/FLAC | Music.app is refreshed via `refresh` after writing |
-| Track number | Position on album (X/Y) | — | Spotify only |
+| Album | Release title | Album | `TALB` / `©alb` / `ALBUM` |
+| Year | Release year | Year | `TDRC` / `©day` / `DATE` |
+| Genre | Genres + styles (Discogs) / artist genres (Spotify) | Genre | `TCON` / `©gen` / `GENRE` |
+| Label | Label | Grouping **and** `TPUB` in the file | `TPUB` (MP3/WAV/AIFF), `ORGANIZATION` (FLAC) |
+| Comments | Release URL (Discogs or Spotify) | Comments | `COMM` / `©cmt` / `COMMENT` |
+| Artwork | Cover art | written into the file, then `refresh` | MP3/M4A/FLAC/WAV/AIFF |
+| Track number | Position on album (X/Y) | Track number | `TRCK` / `trkn` / `TRACKNUMBER` — Spotify only |
+| Artist / Title | Split from `Artist - Title` when the artist field is empty | Artist / Name | `TPE1` / `TIT2` etc. |
 
-The **Label** field is written both to Music.app (Grouping) and directly into the audio file as a `TPUB` tag, so Rekordbox reads it as Label.
+The **Label** is written both to Music.app (Grouping) and into the audio file as `TPUB`, so Rekordbox reads it as Label.
 
 ## Log file
 
-After each session a JSON log file is created in the `logs/` folder (`logs/enricher_DATE_TIME.log.json`) with the status and changes applied per track. Useful if you want to undo something. The folder is created automatically and excluded from version control.
+After each session a JSON log file is created in `logs/` (project folder for the CLI/TUI; `~/Library/Application Support/WaxTagger/logs/` for the app) with the status and changes applied per track. Useful if you want to undo something.
 
 ## Search strategy
 
@@ -203,21 +255,22 @@ The search function automatically tries multiple variants when an initial query 
 
 ```
 wax-tagger/
-├── main.py              # Entry point + CLI flow
-├── config.py            # Credentials and settings
-├── models.py            # Shared Release model (Discogs + Spotify)
-├── utils.py             # Shared helpers: artist_match, title_match
+├── main.py                    # CLI/TUI entry point (thin shim around src/waxtagger)
+├── pyproject.toml             # Briefcase app config
 ├── requirements.txt
-├── docs/                # Documentation assets (screenshots)
-├── logs/                # Session log files (auto-created, not in git)
-├── .env                 # Local credentials (not in git)
-├── .oauth_tokens        # Discogs access token (auto-created, not in git)
-├── itunes/
-│   ├── bridge.py        # AppleScript communication with Music.app
-│   └── models.py        # Track dataclass
-├── discogs/
-│   ├── client.py        # Discogs API wrapper (OAuth, search, artwork)
-│   └── models.py        # Re-export of Release as DiscogsRelease
-└── spotify/
-    └── client.py        # Spotify API wrapper (client credentials, search, artwork)
+├── docs/                      # Screenshots
+├── src/waxtagger/
+│   ├── app.py                 # Toga app: startup, toolbar
+│   ├── screens/               # GUI screens: main, progress, review, settings
+│   ├── enricher.py            # Core: batch run, matching, proposed changes, writing
+│   ├── config.py              # Credentials (.env / env vars / keychain) and paths
+│   ├── track.py               # Shared Track model (both library sources)
+│   ├── models.py              # Shared Release model (Discogs + Spotify)
+│   ├── utils.py               # artist_match, title_match, split_artist_title
+│   ├── itunes/bridge.py       # Music.app via AppleScript + file tags via mutagen
+│   ├── folder/bridge.py       # Folder source: scan, read/write tags, rename
+│   ├── discogs/client.py      # Discogs API (OAuth, search, artwork)
+│   └── spotify/client.py      # Spotify API (client credentials, search, artwork)
+├── .env                       # Local credentials (not in git)
+└── .oauth_tokens              # Discogs access token (auto-created, not in git)
 ```
